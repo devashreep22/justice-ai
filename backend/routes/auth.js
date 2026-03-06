@@ -5,14 +5,17 @@ import bcrypt from 'bcryptjs';
 
 const router = express.Router();
 
+const normalizeEmail = (value = '') => value.trim().toLowerCase();
+
 // Signup endpoint
 router.post('/signup', async (req, res) => {
   console.log('SIGNUP_ENDPOINT_CALLED_12345', req.body);
   try {
     const { email, password, fullName, userType, ...otherProfileData } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
     // Validate input
-    if (!email || !password || !userType) {
+    if (!normalizedEmail || !password || !userType) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -24,7 +27,7 @@ router.post('/signup', async (req, res) => {
 
     // Create user in Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password,
       email_confirm: true,
     });
@@ -39,7 +42,7 @@ router.post('/signup', async (req, res) => {
     // Prepare profile data based on user type
     let profileData = {
       id: authData.user.id,
-      email,
+      email: normalizedEmail,
       full_name: fullName,
       user_type: userType,
     };
@@ -85,7 +88,7 @@ router.post('/signup', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: authData.user.id, email, userType },
+      { id: authData.user.id, email: normalizedEmail, userType },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE }
     );
@@ -94,7 +97,7 @@ router.post('/signup', async (req, res) => {
       message: 'User created successfully',
       user: {
         id: authData.user.id,
-        email,
+        email: normalizedEmail,
         fullName,
         userType,
       },
@@ -115,19 +118,23 @@ router.post('/signup', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
     // Authenticate user
     const { data, error } = await supabaseAuth.auth.signInWithPassword({
-      email,
+      email: normalizedEmail,
       password,
     });
 
     if (error) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      if (error.message?.toLowerCase().includes('email not confirmed')) {
+        return res.status(403).json({ error: 'Email is not confirmed' });
+      }
+      return res.status(401).json({ error: error.message || 'Invalid credentials' });
     }
 
     // Fetch user profile
@@ -144,20 +151,20 @@ router.post('/login', async (req, res) => {
 
     if (!userData) {
       // Backfill missing admin profile for legacy accounts.
-      const isAdminEmail = email.toLowerCase().endsWith('@justiceai.com');
+      const isAdminEmail = normalizedEmail.endsWith('@justiceai.com');
       if (!isAdminEmail) {
         return res.status(404).json({ error: 'User profile not found' });
       }
 
       const inferredName =
         data.user.user_metadata?.full_name ||
-        email.split('@')[0];
+        normalizedEmail.split('@')[0];
 
       const { data: insertedProfile, error: insertError } = await supabase
         .from('users')
         .insert({
           id: data.user.id,
-          email,
+          email: normalizedEmail,
           full_name: inferredName,
           user_type: 'admin',
         })
@@ -184,7 +191,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: data.user.id, email, userType: userData.user_type },
+      { id: data.user.id, email: normalizedEmail, userType: userData.user_type },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE }
     );

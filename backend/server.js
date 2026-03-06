@@ -39,10 +39,27 @@ export const supabaseAuth = createClient(
 );
 
 // Middleware
-app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
-  credentials: true,
-}));
+const configuredOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowLocalhostOrigin = (origin = '') =>
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser clients and same-origin requests without Origin header.
+      if (!origin) return callback(null, true);
+      if (configuredOrigins.includes(origin) || allowLocalhostOrigin(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 

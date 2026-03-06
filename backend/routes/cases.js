@@ -19,6 +19,72 @@ const PINCODE_STATION_MAP = {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const wrapText = (text = '', maxChars = 90) => {
+  const words = String(text).replace(/\r/g, '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if ((current + ' ' + word).length <= maxChars) {
+      current += ` ${word}`;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+};
+
+const escapePdfText = (value = '') =>
+  String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+
+const buildPdfBuffer = ({ title, lines }) => {
+  const allLines = [title || 'Legal Draft', '', ...(lines || [])];
+  const wrapped = allLines.flatMap((line) => (line ? wrapText(line, 90) : ['']));
+  const printableLines = wrapped.slice(0, 52);
+
+  const contentParts = ['BT', '/F1 11 Tf', '50 760 Td'];
+  for (const [index, line] of printableLines.entries()) {
+    contentParts.push(`(${escapePdfText(line)}) Tj`);
+    if (index < printableLines.length - 1) contentParts.push('0 -14 Td');
+  }
+  contentParts.push('ET');
+  const contentStream = contentParts.join('\n');
+
+  const objects = [];
+  objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  objects.push(
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n'
+  );
+  objects.push('4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+  objects.push(`5 0 obj\n<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream\nendobj\n`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += obj;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let i = 1; i < offsets.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, 'utf8');
+};
+
 const calculateCaseStrength = ({ description = '', evidence = '', proofCount = 0 }) => {
   const descriptionScore = clamp(Math.floor(description.trim().length / 12), 0, 55);
   const evidenceScore = evidence.trim().length > 0 ? clamp(Math.floor(evidence.trim().length / 20), 0, 25) : 0;
@@ -77,7 +143,7 @@ const generateCaseAnalysis = ({ description = '', evidence = '', proofCount = 0,
   };
 };
 
-const generateEscalationDraft = ({
+const generateLegalComplaintDraft = ({
   name = '',
   phone = '',
   email = '',
@@ -85,25 +151,176 @@ const generateEscalationDraft = ({
   caseType = '',
   location = '',
   summary = '',
+  nearestPoliceStation = '',
+  preferredLanguage = 'english',
 }) => {
+  const date = new Date().toISOString().slice(0, 10);
+  const lang = String(preferredLanguage || '').toLowerCase();
+
+  if (lang === 'hindi') {
+    return [
+      'विषय: विधिक शिकायत प्रारूप',
+      '',
+      'सेवा में,',
+      'स्टेशन हाउस अधिकारी,',
+      nearestPoliceStation || 'संबंधित पुलिस थाना,',
+      '',
+      `दिनांक: ${date}`,
+      '',
+      `मैं, ${name || '[आपका नाम]'}, विनम्रतापूर्वक यह शिकायत पंजीकरण और जांच हेतु प्रस्तुत करता/करती हूं।`,
+      `ट्रैकिंग आईडी: ${trackingId || '[Tracking ID]'}`,
+      `मामले का प्रकार: ${caseType || '[Case Type]'}`,
+      location ? `घटना स्थल: ${location}` : '',
+      '',
+      `शिकायत सारांश: ${summary || '[Summary]'}`,
+      '',
+      'प्रार्थना:',
+      '- कृपया विधि अनुसार इस शिकायत/एफआईआर को दर्ज करें।',
+      '- सभी प्रासंगिक साक्ष्यों का संरक्षण करते हुए जांच शुरू करें।',
+      '- मामले की प्रगति और अगली कानूनी कार्यवाही की जानकारी दें।',
+      '',
+      `संपर्क: ${phone || '[Phone]'} | ${email || '[Email]'}`,
+      '',
+      'मेरी जानकारी के अनुसार उपरोक्त तथ्य सत्य हैं।',
+      '',
+      'कृपया यथाशीघ्र आवश्यक कार्यवाही करें।',
+      '',
+      'भवदीय,',
+      `${name || '[आपका नाम]'}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (lang === 'marathi') {
+    return [
+      'विषय: कायदेशीर तक्रार मसुदा',
+      '',
+      'प्रति,',
+      'स्टेशन हाउस ऑफिसर,',
+      nearestPoliceStation || 'संबंधित पोलीस ठाणे,',
+      '',
+      `दिनांक: ${date}`,
+      '',
+      `मी, ${name || '[तुमचे नाव]'}, नोंदणी आणि तपासणीसाठी ही कायदेशीर तक्रार सादर करीत आहे.`,
+      `ट्रॅकिंग आयडी: ${trackingId || '[Tracking ID]'}`,
+      `प्रकरणाचा प्रकार: ${caseType || '[Case Type]'}`,
+      location ? `घटनेचे ठिकाण: ${location}` : '',
+      '',
+      `तक्रारीचा सारांश: ${summary || '[Summary]'}`,
+      '',
+      'विनंती:',
+      '- कृपया कायद्यानुसार ही तक्रार/एफआयआर नोंदवा.',
+      '- संबंधित पुरावे जतन करून तपास सुरू करा.',
+      '- प्रकरणाची प्रगती आणि पुढील कायदेशीर पावले कळवा.',
+      '',
+      `संपर्क: ${phone || '[Phone]'} | ${email || '[Email]'}`,
+      '',
+      'वरील माहिती माझ्या माहितीनुसार खरी आहे.',
+      '',
+      'कृपया लवकरात लवकर आवश्यक कारवाई करावी.',
+      '',
+      'आपला नम्र,',
+      `${name || '[तुमचे नाव]'}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (lang === 'tamil') {
+    return [
+      'பொருள்: சட்ட புகார் வரைவு',
+      '',
+      'அனுப்புவது:',
+      'ஸ்டேஷன் ஹவுஸ் அதிகாரி,',
+      nearestPoliceStation || 'சம்பந்தப்பட்ட காவல் நிலையம்,',
+      '',
+      `தேதி: ${date}`,
+      '',
+      `நான், ${name || '[உங்கள் பெயர்]'}, பதிவு மற்றும் விசாரணைக்காக இந்த சட்ட புகாரை சமர்ப்பிக்கிறேன்.`,
+      `டிராக்கிங் ஐடி: ${trackingId || '[Tracking ID]'}`,
+      `வழக்கின் வகை: ${caseType || '[Case Type]'}`,
+      location ? `நிகழ்வு இடம்: ${location}` : '',
+      '',
+      `புகார் சுருக்கம்: ${summary || '[Summary]'}`,
+      '',
+      'வேண்டுகோள்:',
+      '- சட்டப்படி இந்த புகார்/எஃப்ஐஆர்-ஐ பதிவு செய்யவும்.',
+      '- தொடர்புடைய சான்றுகளை பாதுகாத்து விசாரணையை தொடங்கவும்.',
+      '- வழக்கின் முன்னேற்றம் மற்றும் அடுத்தடுத்த சட்ட நடவடிக்கைகளை தெரிவிக்கவும்.',
+      '',
+      `தொடர்பு: ${phone || '[Phone]'} | ${email || '[Email]'}`,
+      '',
+      'மேலே உள்ள தகவல்கள் எனது அறிவிற்கு உண்மையானவை.',
+      '',
+      'தயவுசெய்து உடனடி நடவடிக்கை எடுக்கவும்.',
+      '',
+      'நன்றி,',
+      `${name || '[உங்கள் பெயர்]'}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (lang === 'telugu') {
+    return [
+      'విషయం: చట్టపరమైన ఫిర్యాదు ముసాయిదా',
+      '',
+      'కు,',
+      'స్టేషన్ హౌస్ ఆఫీసర్ గారికి,',
+      nearestPoliceStation || 'సంబంధిత పోలీస్ స్టేషన్,',
+      '',
+      `తేదీ: ${date}`,
+      '',
+      `నేను, ${name || '[మీ పేరు]'}, నమోదు మరియు దర్యాప్తు కోసం ఈ చట్టపరమైన ఫిర్యాదును సమర్పిస్తున్నాను.`,
+      `ట్రాకింగ్ ఐడి: ${trackingId || '[Tracking ID]'}`,
+      `కేసు రకం: ${caseType || '[Case Type]'}`,
+      location ? `సంఘటన స్థలం: ${location}` : '',
+      '',
+      `ఫిర్యాదు సారాంశం: ${summary || '[Summary]'}`,
+      '',
+      'వినతి:',
+      '- చట్టం ప్రకారం ఈ ఫిర్యాదు/ఎఫ్‌ఐఆర్ నమోదు చేయండి.',
+      '- సంబంధిత సాక్ష్యాలను భద్రపరచి దర్యాప్తు ప్రారంభించండి.',
+      '- కేసు పురోగతి మరియు తదుపరి చట్టపరమైన చర్యలను తెలియజేయండి.',
+      '',
+      `సంప్రదింపు: ${phone || '[Phone]'} | ${email || '[Email]'}`,
+      '',
+      'పైన తెలిపిన వివరాలు నా తెలిసిన మేరకు నిజమైనవి.',
+      '',
+      'దయచేసి త్వరితగతిన అవసరమైన చర్యలు తీసుకోవాలి.',
+      '',
+      'భవదీయుడు/భవదీయురాలు,',
+      `${name || '[మీ పేరు]'}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
   return [
-    'Subject: Request for Case Escalation and Priority Review',
+    'Subject: Legal Complaint Draft',
     '',
     'To,',
-    'The Concerned Senior Officer,',
+    'Station House Officer,',
+    nearestPoliceStation || 'Concerned Police Station,',
     '',
-    `I, ${name || '[Your Name]'}, request escalation of my complaint for priority review.`,
+    `Date: ${date}`,
+    '',
+    `I, ${name || '[Your Name]'}, respectfully submit this legal complaint for registration and investigation.`,
     `Tracking ID: ${trackingId || '[Tracking ID]'}`,
     `Case Type: ${caseType || '[Case Type]'}`,
     location ? `Incident Location: ${location}` : '',
     '',
     `Complaint Summary: ${summary || '[Summary]'}`,
     '',
-    'Reason for escalation:',
-    '- Matter is serious and requires timely action.',
-    '- I request status update, FIR/investigation progress, and next procedural steps.',
+    'Prayer:',
+    '- Kindly register this complaint/FIR as applicable under law.',
+    '- Initiate investigation and preserve all relevant evidence.',
+    '- Keep me informed of case progress and next legal steps.',
     '',
     `Contact: ${phone || '[Phone]'} | ${email || '[Email]'}`,
+    '',
+    'I confirm the above facts are true to the best of my knowledge.',
     '',
     'Kindly acknowledge and take necessary action at the earliest.',
     '',
@@ -135,6 +352,15 @@ const buildProtectedId = () => {
 const getNearestPoliceStation = (pincode) => {
   if (!pincode) return 'Nearest police station to be assigned';
   return PINCODE_STATION_MAP[pincode] || 'Nearest police station to be assigned';
+};
+
+const getLocalizedComplaintSuccessMessage = (preferredLanguage = 'english') => {
+  const lang = String(preferredLanguage || '').toLowerCase();
+  if (lang === 'hindi') return 'शिकायत सफलतापूर्वक दर्ज की गई';
+  if (lang === 'marathi') return 'तक्रार यशस्वीपणे नोंदवली गेली';
+  if (lang === 'tamil') return 'புகார் வெற்றிகரமாக பதிவு செய்யப்பட்டது';
+  if (lang === 'telugu') return 'ఫిర్యాదు విజయవంతంగా నమోదు చేయబడింది';
+  return 'Complaint filed successfully';
 };
 
 const sanitizeProtectedCaseForPolice = (caseData) => {
@@ -237,6 +463,7 @@ router.get('/public/track/:trackingId', async (req, res) => {
         complaintSummary: caseData.complaint_summary || null,
         caseAnalysis: caseData.case_analysis || null,
         escalationDraft: caseData.escalation_draft || null,
+        legalDraft: caseData.escalation_draft || null,
         isProtectedCase: !!caseData.is_protected_case,
         protectedId: caseData.protected_reference_id || null,
         pincode: caseData.complainant_pincode || null,
@@ -248,6 +475,35 @@ router.get('/public/track/:trackingId', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Public: download legal draft as PDF by tracking ID
+router.get('/public/draft-pdf/:trackingId', async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    const { data: caseData, error } = await supabase
+      .from('cases')
+      .select('tracking_id, escalation_draft')
+      .eq('tracking_id', trackingId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!caseData) return res.status(404).json({ error: 'Tracking ID not found' });
+    if (!caseData.escalation_draft) return res.status(404).json({ error: 'Legal draft not available' });
+
+    const pdfBuffer = buildPdfBuffer({
+      title: `Legal Complaint Draft - ${caseData.tracking_id}`,
+      lines: String(caseData.escalation_draft).split('\n'),
+    });
+
+    const safeTracking = String(caseData.tracking_id || 'draft').replace(/[^A-Za-z0-9_-]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=\"legal-draft-${safeTracking}.pdf\"`);
+    res.setHeader('Content-Length', String(pdfBuffer.length));
+    return res.status(200).send(pdfBuffer);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -294,7 +550,7 @@ router.post('/public/complaints', async (req, res) => {
       accusedName,
     });
     const caseAnalysis = generateCaseAnalysis({ description, evidence, proofCount, witnessDetails });
-    const escalationDraft = generateEscalationDraft({
+    const legalDraft = generateLegalComplaintDraft({
       name,
       phone,
       email,
@@ -302,6 +558,8 @@ router.post('/public/complaints', async (req, res) => {
       caseType,
       location,
       summary: complaintSummary,
+      nearestPoliceStation,
+      preferredLanguage,
     });
     const complaintFormSnapshot = {
       name,
@@ -349,7 +607,7 @@ router.post('/public/complaints', async (req, res) => {
         complaint_summary: complaintSummary,
         complaint_form_json: complaintFormSnapshot,
         case_analysis: caseAnalysis,
-        escalation_draft: escalationDraft,
+        escalation_draft: legalDraft,
         incident_date: incidentDate,
         incident_time: incidentTime,
         accused_name: accusedName,
@@ -369,7 +627,7 @@ router.post('/public/complaints', async (req, res) => {
     }
 
     res.status(201).json({
-      message: 'Complaint filed successfully',
+      message: getLocalizedComplaintSuccessMessage(preferredLanguage),
       complaint: {
         id: data.id,
         caseNumber,
@@ -377,7 +635,8 @@ router.post('/public/complaints', async (req, res) => {
         caseStrength,
         complaintSummary,
         caseAnalysis,
-        escalationDraft,
+        escalationDraft: legalDraft,
+        legalDraft,
         fullFormSaved: true,
         protectedId: protectedReferenceId,
         nearestPoliceStation,
