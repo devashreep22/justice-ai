@@ -10,6 +10,7 @@ import {
 import Link from 'next/link'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const CHATBOT_API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || `${API_BASE_URL}/v1/chatbot`
 
 // Animated Pie Chart Component
 interface PieChartProps {
@@ -691,7 +692,7 @@ export default function Home() {
     setIsAnalyzing(true)
     try {
       if (chatbotMode === 'legal') {
-        const response = await fetch(`${API_BASE_URL}/chatbot/process`, {
+        const response = await fetch(`${CHATBOT_API_BASE_URL}/process`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ complaint: aiAnalysisInput }),
@@ -711,7 +712,7 @@ export default function Home() {
         })
       } else {
         const nextMessages = [...chatbotMessages, { role: 'user' as const, content: aiAnalysisInput }]
-        const response = await fetch(`${API_BASE_URL}/chatbot/chat`, {
+        const response = await fetch(`${CHATBOT_API_BASE_URL}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: nextMessages }),

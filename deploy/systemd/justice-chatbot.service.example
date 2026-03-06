@@ -1,0 +1,17 @@
+[Unit]
+Description=Justice AI Python Chatbot Backend
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_WSL_USER
+WorkingDirectory=__REPO_ROOT__/chatbot/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

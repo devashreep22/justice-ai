@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Scale } from 'lucide-react'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const CHATBOT_API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || `${API_BASE_URL}/v1/chatbot`
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -36,7 +37,7 @@ export default function AICaseAnalysisPage() {
 
     try {
       if (mode === 'legal') {
-        const response = await fetch(`${API_BASE_URL}/v1/chatbot/process`, {
+        const response = await fetch(`${CHATBOT_API_BASE_URL}/process`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ complaint }),
@@ -52,7 +53,7 @@ export default function AICaseAnalysisPage() {
         })
       } else {
         const nextMessages = [...messages, { role: 'user' as const, content: complaint }]
-        const response = await fetch(`${API_BASE_URL}/v1/chatbot/chat`, {
+        const response = await fetch(`${CHATBOT_API_BASE_URL}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: nextMessages }),

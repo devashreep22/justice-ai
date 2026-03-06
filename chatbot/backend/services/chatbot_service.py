@@ -3,12 +3,19 @@ Justice AI Chatbot Service
 Handles complaint categorization, legal guidance, and optional GPT chat
 """
 
+import json
 import os
+from pathlib import Path
 from openai import OpenAI
+from dotenv import load_dotenv
 try:
     from groq import Groq
 except ImportError:
     Groq = None
+
+
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env")
+
 
 class ChatbotService:
     """Main chatbot service for processing legal complaints and chat"""
@@ -93,6 +100,78 @@ class ChatbotService:
         }
         
         return responses.get(category, responses["General Complaint"])
+
+    @staticmethod
+    def _parse_json_object(text: str) -> dict | None:
+        if not text:
+            return None
+
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`")
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:].strip()
+
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                return None
+            try:
+                return json.loads(cleaned[start : end + 1])
+            except Exception:
+                return None
+
+    @classmethod
+    def _ai_process_complaint(cls, user_input: str) -> dict | None:
+        prompt = (
+            "You are an Indian legal guidance assistant. "
+            "Return ONLY valid JSON with this schema: "
+            "{"
+            "\"category\": string, "
+            "\"section\": string, "
+            "\"advice\": string, "
+            "\"escalation\": string, "
+            "\"helpline\": string"
+            "}. "
+            "Pick a practical category like Cyber Fraud, Harassment, Domestic Violence, Theft, Property Dispute, Financial Fraud, or General Complaint. "
+            "Keep advice actionable and concise."
+        )
+
+        ai = cls.chat_with_gpt(
+            [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_input},
+            ],
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        )
+        if not ai.get("success") or not ai.get("reply"):
+            return None
+
+        parsed = cls._parse_json_object(ai["reply"])
+        if not parsed:
+            return None
+
+        category = str(parsed.get("category", "")).strip() or "General Complaint"
+        section = str(parsed.get("section", "")).strip() or "To be determined"
+        advice = str(parsed.get("advice", "")).strip() or "Consult nearest police station or legal advisor for guidance."
+        escalation = str(parsed.get("escalation", "")).strip() or "Seek legal advice if no response within 30 days."
+        helpline = str(parsed.get("helpline", "")).strip() or "100 (Police Emergency)"
+
+        return {
+            "success": True,
+            "error": None,
+            "category": category,
+            "response": {
+                "section": section,
+                "advice": advice,
+                "escalation": escalation,
+                "helpline": helpline,
+            },
+            "disclaimer": "AI-generated legal guidance. Not a substitute for a licensed lawyer.",
+        }
     
     @classmethod
     def process_complaint(cls, user_input: str) -> dict:
@@ -114,6 +193,19 @@ class ChatbotService:
             }
         
         try:
+            ai_result = cls._ai_process_complaint(user_input)
+            if ai_result:
+                return ai_result
+
+            allow_keyword_fallback = os.getenv("ALLOW_KEYWORD_FALLBACK", "false").lower() == "true"
+            if not allow_keyword_fallback:
+                return {
+                    "success": False,
+                    "error": "AI legal guidance unavailable. Check GROQ/OPENAI/OPENROUTER configuration.",
+                    "category": None,
+                    "response": None,
+                }
+
             category = cls.detect_category(user_input)
             response_data = cls.generate_response(category)
             
@@ -126,7 +218,8 @@ class ChatbotService:
                     "advice": response_data["advice"],
                     "escalation": response_data["escalation"],
                     "helpline": response_data["helpline"]
-                }
+                },
+                "disclaimer": "Keyword fallback response shown because AI provider response was unavailable."
             }
         except Exception as e:
             return {
@@ -140,46 +233,95 @@ class ChatbotService:
     def chat_with_gpt(cls, messages: list[dict], model: str = "gpt-3.5-turbo") -> dict:
         """
         Send a conversation to AI and return the assistant reply.
-        Uses Groq (free) if GROQ_API_KEY is set, otherwise tries OpenAI.
-        Falls back to mock responses if no API key is configured.
+        Provider priority: GROQ -> OPENAI -> OPENROUTER.
+        Returns explicit errors instead of silent mock/default replies.
         """
-        # Try Groq first (free option)
-        groq_key = os.getenv("GROQ_API_KEY")
-        if groq_key and Groq is not None:
+        if not messages:
+            return {"success": False, "error": "No messages provided.", "reply": None}
+
+        provider_errors: list[str] = []
+        preferred_provider = (os.getenv("AI_PROVIDER") or "groq").strip().lower()
+        provider_allows = {
+            "groq": {"groq"},
+            "openai": {"openai"},
+            "openrouter": {"openrouter"},
+            "auto": {"groq", "openai", "openrouter"},
+        }
+        enabled = provider_allows.get(preferred_provider, {"groq"})
+
+        # Try Groq first
+        groq_key = (os.getenv("GROQ_API_KEY") or "").strip()
+        if "groq" in enabled and groq_key and Groq is not None:
             try:
                 client = Groq(api_key=groq_key)
-                # Use currently supported Groq model (llama-3.3-70b-versatile)
+                groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
                 resp = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=groq_model,
                     messages=messages,
                     max_tokens=1024
                 )
                 text = resp.choices[0].message.content.strip()
                 return {"success": True, "reply": text, "error": None}
             except Exception as e:
-                error_msg = str(e)
-                # If model is deprecated, fall back to mock responses
-                if "decommissioned" in error_msg or "no longer supported" in error_msg:
-                    return cls._get_mock_response(messages)
-                return {"success": False, "error": f"Groq API error: {str(e)}", "reply": None}
+                provider_errors.append(f"GROQ failed: {str(e)}")
         
-        # Try OpenAI (paid)
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
+        # Try OpenAI
+        openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if "openai" in enabled and openai_key:
             try:
                 client = OpenAI(api_key=openai_key)
                 resp = client.chat.completions.create(model=model, messages=messages)
                 text = resp.choices[0].message.content.strip()
                 return {"success": True, "reply": text, "error": None}
             except Exception as e:
-                error_msg = str(e)
-                # If API fails (quota, rate limit, etc), use mock response
-                if "insufficient_quota" in error_msg or "rate_limit" in error_msg:
-                    return cls._get_mock_response(messages)
-                return {"success": False, "error": str(e), "reply": None}
-        
-        # No API key - use mock responses
-        return cls._get_mock_response(messages)
+                provider_errors.append(f"OPENAI failed: {str(e)}")
+
+        # Try OpenRouter
+        openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        if "openrouter" in enabled and openrouter_key:
+            attempted_models: list[str] = []
+            try:
+                configured_model = (os.getenv("OPENROUTER_MODEL") or "").strip()
+                model_candidates = [
+                    configured_model,
+                    "openai/gpt-4o-mini",
+                    "meta-llama/llama-3.1-8b-instruct",
+                    "google/gemini-2.0-flash-001",
+                ]
+                model_candidates = [m for m in model_candidates if m]
+                client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=openrouter_key,
+                )
+                for openrouter_model in model_candidates:
+                    attempted_models.append(openrouter_model)
+                    try:
+                        resp = client.chat.completions.create(
+                            model=openrouter_model,
+                            messages=messages,
+                        )
+                        text = resp.choices[0].message.content.strip()
+                        return {"success": True, "reply": text, "error": None}
+                    except Exception:
+                        continue
+                provider_errors.append(
+                    "OPENROUTER failed for models: " + ", ".join(attempted_models)
+                )
+            except Exception as e:
+                provider_errors.append(f"OPENROUTER failed: {str(e)}")
+
+        if not provider_errors:
+            return {
+                "success": False,
+                "reply": None,
+                "error": f"No AI provider configured for AI_PROVIDER={preferred_provider}.",
+            }
+
+        return {
+            "success": False,
+            "reply": None,
+            "error": " | ".join(provider_errors),
+        }
     
     @staticmethod
     def _get_mock_response(messages: list[dict]) -> dict:
