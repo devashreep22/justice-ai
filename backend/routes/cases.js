@@ -8,6 +8,7 @@ const normalizeTrackingId = (value = '') => String(value).trim().toUpperCase();
 
 const PINCODE_STATION_MAP = {
   '400001': 'Azad Maidan Police Station, Mumbai',
+  '416410':'Miraj Police Station, Sangli',
   '400050': 'Bandra Police Station, Mumbai',
   '400053': 'Andheri Police Station, Mumbai',
   '110001': 'Connaught Place Police Station, New Delhi',
