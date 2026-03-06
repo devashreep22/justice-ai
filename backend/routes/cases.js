@@ -415,6 +415,28 @@ const logCaseActivity = async (caseId, userId, activityType, description) => {
   }
 };
 
+const sanitizeVictimMessageForPublic = (msg) => ({
+  id: msg.id,
+  senderRole: msg.sender_role,
+  senderLabel: msg.sender_role === 'victim' ? 'You' : 'Police Officer',
+  message: msg.message_text,
+  createdAt: msg.created_at,
+});
+
+const sanitizeMessageForPolice = (msg, protectedId = null) => ({
+  id: msg.id,
+  senderRole: msg.sender_role,
+  senderLabel:
+    msg.sender_role === 'victim'
+      ? `Victim (${protectedId || msg.sender_ref || 'Protected ID'})`
+      : msg.sender_role === 'admin'
+      ? 'Admin'
+      : 'Police',
+  senderRef: msg.sender_role === 'victim' ? protectedId || msg.sender_ref || null : msg.sender_ref || null,
+  message: msg.message_text,
+  createdAt: msg.created_at,
+});
+
 // Public: nearest police station by pincode
 router.get('/public/police-station/:pincode', async (req, res) => {
   try {
@@ -471,6 +493,7 @@ router.get('/public/track/:trackingId', async (req, res) => {
         protectedId: caseData.protected_reference_id || null,
         pincode: caseData.complainant_pincode || null,
         nearestPoliceStation: caseData.nearest_police_station || null,
+        communicationEnabled: true,
         createdAt: caseData.created_at,
         updatedAt: caseData.updated_at,
       },
@@ -478,6 +501,73 @@ router.get('/public/track/:trackingId', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Public: victim-police secure messages by tracking ID (identity-safe)
+router.get('/public/track/:trackingId/messages', async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    const { data: caseData, error: caseError } = await supabase
+      .from('cases')
+      .select('id, protected_reference_id')
+      .eq('tracking_id', trackingId)
+      .maybeSingle();
+
+    if (caseError) throw caseError;
+    if (!caseData) return res.status(404).json({ error: 'Tracking ID not found' });
+
+    const { data: messages, error } = await supabase
+      .from('case_messages')
+      .select('*')
+      .eq('case_id', caseData.id)
+      .order('created_at', { ascending: true })
+      .limit(200);
+
+    if (error) throw error;
+
+    return res.json({
+      protectedId: caseData.protected_reference_id || null,
+      messages: (messages || []).map(sanitizeVictimMessageForPublic),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Public: victim sends secure message to police by tracking ID
+router.post('/public/track/:trackingId/messages', async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+    const message = String(req.body?.message || '').trim();
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+    if (message.length > 1000) return res.status(400).json({ error: 'Message too long (max 1000 characters)' });
+
+    const { data: caseData, error: caseError } = await supabase
+      .from('cases')
+      .select('id, protected_reference_id')
+      .eq('tracking_id', trackingId)
+      .maybeSingle();
+
+    if (caseError) throw caseError;
+    if (!caseData) return res.status(404).json({ error: 'Tracking ID not found' });
+
+    const senderRef = caseData.protected_reference_id || `PID-${trackingId}`;
+    const { data, error } = await supabase
+      .from('case_messages')
+      .insert({
+        case_id: caseData.id,
+        sender_role: 'victim',
+        sender_ref: senderRef,
+        message_text: message,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return res.status(201).json({ message: sanitizeVictimMessageForPublic(data) });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -541,7 +631,7 @@ router.post('/public/complaints', async (req, res) => {
 
     const caseNumber = buildCaseNumber();
     const trackingId = buildTrackingId();
-    const protectedReferenceId = isProtectedCase ? buildProtectedId() : null;
+    const protectedReferenceId = buildProtectedId();
     const nearestPoliceStation = getNearestPoliceStation(String(pincode));
     const caseStrength = calculateCaseStrength({ description, evidence, proofCount: Number(proofCount) || 0 });
     const complaintSummary = buildComplaintSummary({
@@ -580,8 +670,8 @@ router.post('/public/complaints', async (req, res) => {
       urgencyLevel,
       preferredLanguage,
       pincode,
-      isProtectedCase,
-      protectedReferenceId,
+        isProtectedCase,
+        protectedReferenceId,
       nearestPoliceStation,
       submittedAt: new Date().toISOString(),
     };
@@ -648,6 +738,66 @@ router.post('/public/complaints', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Police/Admin: fetch secure messages for a case
+router.get('/:id/messages', authenticateToken, requireRoles('admin', 'police'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: caseData, error: findError } = await getCaseById(id);
+    if (findError) throw findError;
+    if (!caseData) return res.status(404).json({ error: 'Case not found' });
+    if (!canAccessCase(caseData, req.user)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { data, error } = await supabase
+      .from('case_messages')
+      .select('*')
+      .eq('case_id', id)
+      .order('created_at', { ascending: true })
+      .limit(200);
+    if (error) throw error;
+
+    return res.json({
+      protectedId: caseData.protected_reference_id || null,
+      messages: (data || []).map((msg) => sanitizeMessageForPolice(msg, caseData.protected_reference_id)),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// Police/Admin: send secure message for a case
+router.post('/:id/messages', authenticateToken, requireRoles('admin', 'police'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const message = String(req.body?.message || '').trim();
+    if (!message) return res.status(400).json({ error: 'Message is required' });
+    if (message.length > 1000) return res.status(400).json({ error: 'Message too long (max 1000 characters)' });
+
+    const { data: caseData, error: findError } = await getCaseById(id);
+    if (findError) throw findError;
+    if (!caseData) return res.status(404).json({ error: 'Case not found' });
+    if (!canAccessCase(caseData, req.user)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const senderRole = req.user.userType === 'admin' ? 'admin' : 'police';
+    const { data, error } = await supabase
+      .from('case_messages')
+      .insert({
+        case_id: id,
+        sender_role: senderRole,
+        sender_ref: req.user.id,
+        message_text: message,
+      })
+      .select('*')
+      .single();
+    if (error) throw error;
+
+    return res.status(201).json({
+      message: sanitizeMessageForPolice(data, caseData.protected_reference_id),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -724,11 +874,19 @@ router.put('/:id/fir', authenticateToken, requireRoles('admin', 'police'), async
 
     if (error) throw error;
 
+    const noteSnippet = (progressNotes || '').trim();
     await logCaseActivity(
       id,
       req.user.id,
       'fir_progress_updated',
-      `FIR/Progress updated${firNumber ? ` (FIR: ${firNumber})` : ''}; progress ${nextProgress}%`
+      [
+        `FIR/Progress updated${firNumber ? ` (FIR: ${firNumber})` : ''}`,
+        `status ${nextStatus}`,
+        `progress ${nextProgress}%`,
+        noteSnippet ? `note: ${noteSnippet}` : '',
+      ]
+        .filter(Boolean)
+        .join('; ')
     );
 
     const responseCase = req.user.userType === 'police' ? sanitizeProtectedCaseForPolice(data) : data;

@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS public.case_activities (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create secure case_messages table for victim-police communication
+CREATE TABLE IF NOT EXISTS public.case_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES public.cases(id) ON DELETE CASCADE,
+  sender_role VARCHAR(50) NOT NULL CHECK (sender_role IN ('victim', 'police', 'admin')),
+  sender_ref VARCHAR(100),
+  message_text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Create audit_logs table
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -65,6 +75,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.case_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.case_activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.case_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Drop existing policies if they exist (to avoid conflicts on re-runs)
@@ -113,3 +124,4 @@ CREATE INDEX IF NOT EXISTS idx_cases_assigned_lawyer ON public.cases(assigned_la
 CREATE INDEX IF NOT EXISTS idx_cases_assigned_police ON public.cases(assigned_police_id);
 CREATE INDEX IF NOT EXISTS idx_case_documents_case_id ON public.case_documents(case_id);
 CREATE INDEX IF NOT EXISTS idx_case_activities_case_id ON public.case_activities(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_messages_case_id ON public.case_messages(case_id);

@@ -41,6 +41,10 @@ export default function PoliceDashboard() {
   const [progressNotes, setProgressNotes] = useState('')
   const [isUpdating, setIsUpdating] = useState(false)
   const [error, setError] = useState('')
+  const [secureMessages, setSecureMessages] = useState<Array<{ id: string; senderLabel: string; message: string; createdAt: string }>>([])
+  const [secureMessageInput, setSecureMessageInput] = useState('')
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false)
+  const [isSendingMessage, setIsSendingMessage] = useState(false)
 
   const loadCases = async () => {
     const token = localStorage.getItem('token')
@@ -118,7 +122,62 @@ export default function PoliceDashboard() {
     setFirNumber(caseItem.fir_number || '')
     setProgressPercent(caseItem.progress_percent || 25)
     setProgressNotes(caseItem.progress_notes || '')
+    setSecureMessageInput('')
+    loadSecureMessages(caseItem.id)
   }
+
+  const loadSecureMessages = async (caseId: string) => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    setIsMessagesLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/${caseId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to load messages')
+      setSecureMessages(data.messages || [])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsMessagesLoading(false)
+    }
+  }
+
+  const sendSecureMessage = async () => {
+    if (!selectedCase) return
+    const token = localStorage.getItem('token')
+    if (!token) return
+    if (!secureMessageInput.trim()) return
+
+    setIsSendingMessage(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/${selectedCase.id}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message: secureMessageInput.trim() }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to send message')
+      setSecureMessageInput('')
+      await loadSecureMessages(selectedCase.id)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to send message')
+    } finally {
+      setIsSendingMessage(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedCase?.id) return
+    const interval = setInterval(() => {
+      loadSecureMessages(selectedCase.id)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [selectedCase?.id])
 
   const handleUpdateCase = async () => {
     if (!selectedCase) return
@@ -372,6 +431,41 @@ export default function PoliceDashboard() {
                       placeholder="Investigation update for complainant..."
                     />
                   </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold text-gray-900 mb-3">Secure Communication (Protected)</h3>
+                <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
+                  {isMessagesLoading ? (
+                    <p className="text-sm text-gray-500">Loading messages...</p>
+                  ) : secureMessages.length === 0 ? (
+                    <p className="text-sm text-gray-500">No secure messages yet.</p>
+                  ) : (
+                    secureMessages.map((msg) => (
+                      <div key={msg.id} className="text-sm">
+                        <p className="font-semibold text-gray-800">{msg.senderLabel}</p>
+                        <p className="text-gray-700">{msg.message}</p>
+                        <p className="text-xs text-gray-500">{new Date(msg.createdAt).toLocaleString()}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={secureMessageInput}
+                    onChange={(e) => setSecureMessageInput(e.target.value)}
+                    placeholder="Send secure reply to victim..."
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                  <button
+                    onClick={sendSecureMessage}
+                    disabled={isSendingMessage}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold"
+                  >
+                    {isSendingMessage ? 'Sending...' : 'Send'}
+                  </button>
                 </div>
               </div>
 

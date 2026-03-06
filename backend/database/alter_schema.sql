@@ -76,3 +76,16 @@ CREATE TABLE IF NOT EXISTS public.lawyer_requests (
 CREATE INDEX IF NOT EXISTS idx_lawyer_requests_lawyer_id ON public.lawyer_requests(lawyer_id);
 CREATE INDEX IF NOT EXISTS idx_lawyer_requests_status ON public.lawyer_requests(status);
 CREATE INDEX IF NOT EXISTS idx_lawyer_requests_tracking ON public.lawyer_requests(request_tracking_id);
+
+-- Secure real-time victim-police communication
+CREATE TABLE IF NOT EXISTS public.case_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID NOT NULL REFERENCES public.cases(id) ON DELETE CASCADE,
+  sender_role VARCHAR(50) NOT NULL CHECK (sender_role IN ('victim', 'police', 'admin')),
+  sender_ref VARCHAR(100),
+  message_text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.case_messages ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_case_messages_case_id ON public.case_messages(case_id);

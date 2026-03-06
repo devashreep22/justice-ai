@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { 
   Scale, Menu, X, ArrowRight, FileText, Users, Award, 
   Phone, MessageSquare, AlertCircle, Shield, Briefcase,
@@ -213,6 +213,14 @@ export default function Home() {
   const [trackingIdInput, setTrackingIdInput] = useState('')
   const [trackingResult, setTrackingResult] = useState<any>(null)
   const [isTrackingLoading, setIsTrackingLoading] = useState(false)
+  const [trackingLastRefreshedAt, setTrackingLastRefreshedAt] = useState<string>('')
+  const [secureMessages, setSecureMessages] = useState<Array<{ id: string; senderLabel: string; message: string; createdAt: string }>>([])
+  const [secureMessageInput, setSecureMessageInput] = useState('')
+  const [isSecureMessageLoading, setIsSecureMessageLoading] = useState(false)
+  const [isSecureSendLoading, setIsSecureSendLoading] = useState(false)
+  const [secureChatSetupMessage, setSecureChatSetupMessage] = useState('')
+  const secureChatBoxRef = useRef<HTMLDivElement | null>(null)
+  const secureMessageInputRef = useRef<HTMLInputElement | null>(null)
 
   const i18n = {
     english: {
@@ -603,8 +611,8 @@ export default function Home() {
       description: 'Emergency police assistance',
       icon: Shield,
       actions: [
-        { label: 'Call Now', icon: Phone },
-        { label: 'WhatsApp', icon: MessageSquare }
+        { label: 'Call Now', icon: Phone, href: 'tel:100' },
+        { label: 'WhatsApp', icon: MessageSquare, href: 'https://wa.me/91100?text=Emergency%20assistance%20required' }
       ]
     },
     {
@@ -613,8 +621,8 @@ export default function Home() {
       description: 'Support for women in distress',
       icon: Heart,
       actions: [
-        { label: 'Call Now', icon: Phone },
-        { label: 'WhatsApp', icon: MessageSquare }
+        { label: 'Call Now', icon: Phone, href: 'tel:1091' },
+        { label: 'WhatsApp', icon: MessageSquare, href: 'https://wa.me/911091?text=Need%20urgent%20help' }
       ]
     },
     {
@@ -623,8 +631,8 @@ export default function Home() {
       description: 'Protection for children in need',
       icon: AlertTriangle,
       actions: [
-        { label: 'Call Now', icon: Phone },
-        { label: 'Chat', icon: MessageSquare }
+        { label: 'Call Now', icon: Phone, href: 'tel:1098' },
+        { label: 'Chat', icon: MessageSquare, href: 'https://www.childlineindia.org/' }
       ]
     },
     {
@@ -633,8 +641,8 @@ export default function Home() {
       description: 'Report cyber crimes and frauds',
       icon: Lock,
       actions: [
-        { label: 'Call Now', icon: Phone },
-        { label: 'Report Online', icon: MessageSquare }
+        { label: 'Call Now', icon: Phone, href: 'tel:1930' },
+        { label: 'Report Online', icon: MessageSquare, href: 'https://cybercrime.gov.in/' }
       ]
     },
     {
@@ -643,8 +651,8 @@ export default function Home() {
       description: 'Assistance for senior citizens',
       icon: Users,
       actions: [
-        { label: 'Call Now', icon: Phone },
-        { label: 'WhatsApp', icon: MessageSquare }
+        { label: 'Call Now', icon: Phone, href: 'tel:1090' },
+        { label: 'WhatsApp', icon: MessageSquare, href: 'https://wa.me/911090?text=Need%20support%20for%20senior%20citizen' }
       ]
     },
     {
@@ -653,8 +661,8 @@ export default function Home() {
       description: 'Free legal aid and assistance',
       icon: Briefcase,
       actions: [
-        { label: 'Call Now', icon: Phone },
-        { label: 'Request Aid', icon: MessageSquare }
+        { label: 'Call Now', icon: Phone, href: 'tel:1050' },
+        { label: 'Request Aid', icon: MessageSquare, href: 'https://nalsa.gov.in/' }
       ]
     },
   ]
@@ -995,19 +1003,13 @@ export default function Home() {
     }
   }
 
-  const handleTrackCase = async () => {
-    if (!trackingIdInput.trim()) {
-      alert('Enter tracking ID')
-      return
-    }
-
-    const normalizedTrackingId = trackingIdInput.trim().toUpperCase()
-    setIsTrackingLoading(true)
-    setTrackingResult(null)
+  const fetchTrackingData = async (trackingId: string, showLoader = false) => {
+    if (!trackingId) return
+    const normalizedTrackingId = trackingId.trim().toUpperCase()
+    if (showLoader) setIsTrackingLoading(true)
     try {
       let response = await fetch(`${API_BASE_URL}/cases/public/track/${normalizedTrackingId}`)
       let data = await response.json()
-
       if (!response.ok) {
         response = await fetch(`${API_BASE_URL}/lawyer-help/public/track/${normalizedTrackingId}`)
         data = await response.json()
@@ -1016,11 +1018,142 @@ export default function Home() {
         }
       }
       setTrackingResult(data)
+      setTrackingLastRefreshedAt(new Date().toISOString())
+      await fetchSecureMessages(data?.tracking?.trackingId || trackingId)
+      return data
+    } finally {
+      if (showLoader) setIsTrackingLoading(false)
+    }
+  }
+
+  const handleTrackCase = async () => {
+    const trimmedTrackingId = trackingIdInput.trim()
+    if (!trimmedTrackingId) {
+      alert('Enter tracking ID')
+      return
+    }
+
+    setTrackingResult(null)
+    try {
+      await fetchTrackingData(trimmedTrackingId, true)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to track case')
-    } finally {
-      setIsTrackingLoading(false)
     }
+  }
+
+  const fetchSecureMessages = async (trackingId: string) => {
+    if (!trackingId) return
+    setIsSecureMessageLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/public/track/${trackingId}/messages`)
+      const data = await response.json()
+      if (!response.ok) {
+        const errorText = String(data.error || 'Unable to load secure messages')
+        if (
+          errorText.toLowerCase().includes('case_messages') &&
+          errorText.toLowerCase().includes('schema cache')
+        ) {
+          setSecureChatSetupMessage(
+            "Secure chat is not enabled in database yet. Please run SQL migration for 'public.case_messages'."
+          )
+          setSecureMessages([])
+          return
+        }
+        throw new Error(errorText)
+      }
+      setSecureChatSetupMessage('')
+      setSecureMessages(data.messages || [])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSecureMessageLoading(false)
+    }
+  }
+
+  const sendSecureMessage = async () => {
+    const trackingId = trackingResult?.tracking?.trackingId
+    if (!trackingId) {
+      alert('Track your complaint first')
+      return
+    }
+    if (!secureMessageInput.trim()) {
+      alert('Enter message')
+      return
+    }
+    setIsSecureSendLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/public/track/${trackingId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: secureMessageInput.trim() }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        const errorText = String(data.error || 'Failed to send message')
+        if (
+          errorText.toLowerCase().includes('case_messages') &&
+          errorText.toLowerCase().includes('schema cache')
+        ) {
+          setSecureChatSetupMessage(
+            "Secure chat is not enabled in database yet. Please run SQL migration for 'public.case_messages'."
+          )
+          alert("Secure chat requires DB setup. Run migration for table 'public.case_messages'.")
+          return
+        }
+        throw new Error(errorText)
+      }
+      setSecureChatSetupMessage('')
+      setSecureMessageInput('')
+      await fetchSecureMessages(trackingId)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to send message')
+    } finally {
+      setIsSecureSendLoading(false)
+    }
+  }
+
+  const openPoliceChat = () => {
+    secureChatBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setTimeout(() => {
+      secureMessageInputRef.current?.focus()
+    }, 250)
+  }
+
+  useEffect(() => {
+    const trackingId = trackingResult?.tracking?.trackingId
+    if (!trackingId) return
+
+    const interval = setInterval(() => {
+      fetchTrackingData(trackingId)
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [trackingResult?.tracking?.trackingId])
+
+  const openFooterWindow = (title: string, htmlBody: string) => {
+    const popup = window.open('', '_blank', 'width=560,height=520,resizable=yes,scrollbars=yes')
+    if (!popup) {
+      alert('Please allow popups in browser settings')
+      return
+    }
+    popup.document.write(`
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 16px; color: #1f2937; line-height: 1.5; }
+          h1 { margin: 0 0 12px 0; color: #1d4ed8; font-size: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        ${htmlBody}
+      </body>
+      </html>
+    `)
+    popup.document.close()
   }
 
   return (
@@ -1229,6 +1362,14 @@ export default function Home() {
                 {submittedNearestPoliceStation && (
                   <p className="text-sm text-green-700">Nearest Police Station: {submittedNearestPoliceStation}</p>
                 )}
+                <div className="pt-2">
+                  <button
+                    onClick={openPoliceChat}
+                    className="px-3 py-1.5 rounded bg-blue-700 text-white text-xs font-semibold"
+                  >
+                    Chat with Police
+                  </button>
+                </div>
                 {submittedSummary && (
                   <p className="text-sm text-green-700 mt-1"><span className="font-medium">Abstract:</span> {submittedSummary}</p>
                 )}
@@ -1273,6 +1414,11 @@ export default function Home() {
 
             {trackingResult?.tracking?.caseNumber && (
               <div className="mt-4 p-4 rounded-lg bg-blue-50 border border-blue-200 space-y-2">
+                {trackingLastRefreshedAt && (
+                  <p className="text-xs text-blue-700">
+                    Last refreshed: {new Date(trackingLastRefreshedAt).toLocaleString()}
+                  </p>
+                )}
                 <p><span className="font-semibold">Case:</span> {trackingResult.tracking.caseNumber}</p>
                 <p><span className="font-semibold">Status:</span> {trackingResult.tracking.status}</p>
                 <p><span className="font-semibold">Progress:</span> {trackingResult.tracking.progressPercent}%</p>
@@ -1285,6 +1431,14 @@ export default function Home() {
                 {trackingResult.tracking.nearestPoliceStation && (
                   <p><span className="font-semibold">Nearest Station:</span> {trackingResult.tracking.nearestPoliceStation}</p>
                 )}
+                <div className="pt-1">
+                  <button
+                    onClick={openPoliceChat}
+                    className="px-3 py-1.5 rounded bg-blue-700 text-white text-xs font-semibold"
+                  >
+                    Chat with Police
+                  </button>
+                </div>
                 {trackingResult.tracking.complaintSummary && (
                   <p><span className="font-semibold">Abstract:</span> {trackingResult.tracking.complaintSummary}</p>
                 )}
@@ -1307,6 +1461,74 @@ export default function Home() {
                     </button>
                   </div>
                 )}
+
+                {trackingResult.tracking.communicationEnabled && (
+                  <div ref={secureChatBoxRef} className="mt-4 p-3 rounded-lg bg-white border border-blue-200">
+                    <p className="font-semibold text-blue-900">Secure Communication with Police</p>
+                    <p className="text-xs text-gray-600 mb-2">
+                      Your identity is protected. Messages are shared using Protected ID only.
+                    </p>
+                    {trackingResult.tracking.protectedId && (
+                      <p className="text-xs text-blue-700 mb-2">
+                        Protected ID: {trackingResult.tracking.protectedId}
+                      </p>
+                    )}
+                    <div className="max-h-52 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-2">
+                      {secureChatSetupMessage && (
+                        <p className="text-xs text-amber-700">{secureChatSetupMessage}</p>
+                      )}
+                      {isSecureMessageLoading ? (
+                        <p className="text-xs text-gray-500">Loading messages...</p>
+                      ) : secureMessages.length === 0 ? (
+                        <p className="text-xs text-gray-500">No messages yet. Send your first secure update.</p>
+                      ) : (
+                        secureMessages.map((msg) => (
+                          <div key={msg.id} className="text-xs">
+                            <p className="font-semibold text-gray-700">{msg.senderLabel}</p>
+                            <p className="text-gray-700">{msg.message}</p>
+                            <p className="text-gray-400">{new Date(msg.createdAt).toLocaleString()}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        ref={secureMessageInputRef}
+                        type="text"
+                        value={secureMessageInput}
+                        onChange={(e) => setSecureMessageInput(e.target.value)}
+                        placeholder="Type secure message for assigned police officer..."
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                      <button
+                        onClick={sendSecureMessage}
+                        disabled={isSecureSendLoading}
+                        className="px-3 py-2 bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:bg-gray-400"
+                      >
+                        {isSecureSendLoading ? 'Sending...' : 'Send'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 p-3 rounded-lg bg-white border border-blue-200">
+                  <p className="font-semibold text-blue-900">Police Activity Timeline</p>
+                  <div className="max-h-52 overflow-y-auto mt-2 space-y-2">
+                    {(trackingResult.activities || []).length === 0 ? (
+                      <p className="text-xs text-gray-500">No activity updates yet.</p>
+                    ) : (
+                      (trackingResult.activities || []).map((item: any, idx: number) => (
+                        <div key={`${item.created_at}-${idx}`} className="text-xs border-b border-gray-100 pb-2">
+                          <p className="font-semibold text-gray-800">
+                            {(item.activity_type || 'update').replace(/_/g, ' ')}
+                          </p>
+                          <p className="text-gray-700">{item.description || 'No details'}</p>
+                          <p className="text-gray-400">{new Date(item.created_at).toLocaleString()}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1916,13 +2138,16 @@ export default function Home() {
                     {helpline.actions.map((action, actionIdx) => {
                       const ActionIcon = action.icon
                       return (
-                        <button
+                        <a
                           key={actionIdx}
+                          href={action.href}
+                          target={action.href.startsWith('http') ? '_blank' : undefined}
+                          rel={action.href.startsWith('http') ? 'noreferrer' : undefined}
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition flex items-center justify-center gap-2 text-sm"
                         >
                           <ActionIcon className="w-4 h-4" />
                           {action.label}
-                        </button>
+                        </a>
                       )
                     })}
                   </div>
@@ -1971,26 +2196,26 @@ export default function Home() {
             <div>
               <h4 className="font-bold mb-4">Quick Links</h4>
               <ul className="space-y-2 text-blue-100">
-                <li><a href="#" className="hover:text-white transition">About Us</a></li>
-                <li><a href="#" className="hover:text-white transition">Services</a></li>
-                <li><a href="#" className="hover:text-white transition">Blog</a></li>
-                <li><a href="#" className="hover:text-white transition">Contact</a></li>
+                <li><button type="button" onClick={() => openFooterWindow('About Us', '<p>JusticeAI provides legal guidance, complaint filing, case tracking, and protected identity workflows for safer citizen reporting.</p>')} className="hover:text-white transition text-left">About Us</button></li>
+                <li><button type="button" onClick={() => openFooterWindow('Services', '<ul><li>Complaint filing</li><li>Case tracking</li><li>Secure victim-police communication</li><li>AI legal drafts</li></ul>')} className="hover:text-white transition text-left">Services</button></li>
+                <li><button type="button" onClick={() => openFooterWindow('Blog', '<p>Product and legal-awareness updates will be published here.</p>')} className="hover:text-white transition text-left">Blog</button></li>
+                <li><button type="button" onClick={() => openFooterWindow('Contact', '<p>Email: support@justiceai.com</p><p>Phone: 1-800-JUSTICE</p><p>Emergency: 100</p>')} className="hover:text-white transition text-left">Contact</button></li>
               </ul>
             </div>
             <div>
               <h4 className="font-bold mb-4">Resources</h4>
               <ul className="space-y-2 text-blue-100">
-                <li><a href="#" className="hover:text-white transition">Legal Guide</a></li>
-                <li><a href="#" className="hover:text-white transition">FAQ</a></li>
-                <li><a href="#" className="hover:text-white transition">Support</a></li>
-                <li><a href="#" className="hover:text-white transition">Privacy</a></li>
+                <li><a href="/ai-case-analysis" className="hover:text-white transition">Legal Guide</a></li>
+                <li><button type="button" onClick={() => openFooterWindow('FAQ', '<p><strong>How to track complaint?</strong> Use your tracking ID in Track Case.</p><p><strong>Can I hide identity?</strong> Yes, through protected ID based flow.</p>')} className="hover:text-white transition text-left">FAQ</button></li>
+                <li><button type="button" onClick={() => openFooterWindow('Support', '<p>For help, email support@justiceai.com.</p>')} className="hover:text-white transition text-left">Support</button></li>
+                <li><button type="button" onClick={() => openFooterWindow('Privacy', '<p>JusticeAI handles case data for legal workflow and supports protected communication for victim privacy.</p>')} className="hover:text-white transition text-left">Privacy</button></li>
               </ul>
             </div>
             <div>
               <h4 className="font-bold mb-4">Contact</h4>
-              <p className="text-blue-100">Email: support@justiceai.com</p>
-              <p className="text-blue-100">Phone: 1-800-JUSTICE</p>
-              <p className="text-blue-100">Emergency: 100</p>
+              <p className="text-blue-100">Email: <a className="hover:text-white" href="mailto:support@justiceai.com">support@justiceai.com</a></p>
+              <p className="text-blue-100">Phone: <a className="hover:text-white" href="tel:+18005878423">1-800-JUSTICE</a></p>
+              <p className="text-blue-100">Emergency: <a className="hover:text-white" href="tel:100">100</a></p>
             </div>
           </div>
 
