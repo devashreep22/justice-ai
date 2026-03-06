@@ -91,7 +91,7 @@ Then visit:
 | `/docs` | GET | Swagger documentation |
 
 
-_If using the GPT chat endpoint, set `OPENAI_API_KEY` in your environment before starting the backend._
+_If using the chat GPT endpoint, set `OPENAI_API_KEY` in your environment before starting the backend._
 
 **Main Endpoint Example:**
 ```bash
