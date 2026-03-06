@@ -9,6 +9,7 @@ import teamRoutes from './routes/team.js';
 import caseRoutes from './routes/cases.js';
 import chatbotRoutes from './routes/chatbot.js';
 import lawyerHelpRoutes from './routes/lawyer-help.js';
+import monetizationRoutes from './routes/monetization.js';
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ app.use('/api/cases', caseRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/v1/chatbot', chatbotRoutes);
 app.use('/api/lawyer-help', lawyerHelpRoutes);
+app.use('/api/monetization', monetizationRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

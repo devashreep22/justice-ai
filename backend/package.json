@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "nodemon --ignore data/*.json server.js",
     "seed": "node scripts/seed.js"
   },
   "keywords": ["supabase", "justice", "ai"],

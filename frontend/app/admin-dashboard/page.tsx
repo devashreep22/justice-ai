@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  Scale, LogOut, Bell, Settings, Search, Filter, Check, X,Eye, Shield, Briefcase, Clock, CheckCircle, XCircle, User
+  Scale, LogOut, Bell, Settings, Search, Filter, Check, X, Eye, Shield, Briefcase, Clock, CheckCircle, XCircle, User, FileText
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -160,6 +160,35 @@ export default function AdminDashboard() {
       setSelectedApproval(null)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Rejection failed')
+    }
+  }
+
+  const downloadIndividualReport = async (userId: string, displayName: string) => {
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('Session expired. Please login again.')
+        return
+      }
+      const response = await fetch(`${API_BASE_URL}/users/${userId}/report-pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Unable to download report')
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const safeName = (displayName || 'user').replace(/[^a-zA-Z0-9_-]/g, '_')
+      link.href = url
+      link.download = `report-${safeName}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unable to download report')
     }
   }
 
@@ -382,13 +411,22 @@ export default function AdminDashboard() {
                       <td className="px-6 py-4 text-sm text-gray-600">{app.city}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{app.submittedDate}</td>
                       <td className="px-6 py-4 text-center">
-                        <button
-                          onClick={() => setSelectedApproval(app)}
-                          className="text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-2"
-                        >
-                          <Eye className="w-4 h-4" />
-                          View
-                        </button>
+                        <div className="inline-flex items-center gap-3">
+                          <button
+                            onClick={() => setSelectedApproval(app)}
+                            className="text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-2"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </button>
+                          <button
+                            onClick={() => downloadIndividualReport(app.id, app.name)}
+                            className="text-indigo-600 hover:text-indigo-700 font-medium inline-flex items-center gap-2"
+                          >
+                            <FileText className="w-4 h-4" />
+                            Report PDF
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -532,6 +570,13 @@ export default function AdminDashboard() {
                     </button>
                   </div>
                 )}
+                <button
+                  onClick={() => downloadIndividualReport(selectedApproval.id, selectedApproval.name)}
+                  className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-5 h-5" />
+                  Download Individual Report PDF
+                </button>
               </div>
 
               {/* Close Button */}

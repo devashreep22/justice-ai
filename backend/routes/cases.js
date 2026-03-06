@@ -1,6 +1,7 @@
 import express from 'express';
 import { supabase } from '../server.js';
 import { authenticateToken, requireRoles } from '../middleware/auth.js';
+import { isComplaintFeePaid } from '../utils/complaintFeeStore.js';
 
 const router = express.Router();
 
@@ -357,6 +358,19 @@ const getNearestPoliceStation = (pincode) => {
   return PINCODE_STATION_MAP[pincode] || 'Nearest police station to be assigned';
 };
 
+const classifyCaseType = (caseType = '') => {
+  const value = String(caseType || '').toLowerCase();
+  if (value.includes('harassment')) return 'harassment';
+  if (value.includes('cyber')) return 'cyber';
+  return 'other';
+};
+
+const createChartBucket = () => ({
+  solved: 0,
+  unsolved: 0,
+  registered: 0,
+});
+
 const getLocalizedComplaintSuccessMessage = (preferredLanguage = 'english') => {
   const lang = String(preferredLanguage || '').toLowerCase();
   if (lang === 'hindi') return 'शिकायत सफलतापूर्वक दर्ज की गई';
@@ -448,6 +462,49 @@ router.get('/public/police-station/:pincode', async (req, res) => {
     res.json({ pincode, nearestPoliceStation: station });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Public: aggregate live case stats for homepage charts
+router.get('/public/stats/summary', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('cases')
+      .select('case_type,status');
+
+    if (error) throw error;
+
+    const summary = {
+      harassment: createChartBucket(),
+      cyber: createChartBucket(),
+      overall: createChartBucket(),
+    };
+
+    for (const item of data || []) {
+      const status = String(item?.status || '').toLowerCase();
+      const bucketKey = classifyCaseType(item?.case_type);
+      const bucket =
+        bucketKey === 'harassment'
+          ? summary.harassment
+          : bucketKey === 'cyber'
+          ? summary.cyber
+          : null;
+
+      if (status === 'resolved' || status === 'closed') {
+        summary.overall.solved += 1;
+        if (bucket) bucket.solved += 1;
+      } else if (status === 'open') {
+        summary.overall.registered += 1;
+        if (bucket) bucket.registered += 1;
+      } else {
+        summary.overall.unsolved += 1;
+        if (bucket) bucket.unsolved += 1;
+      }
+    }
+
+    return res.json({ success: true, summary });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -620,6 +677,8 @@ router.post('/public/complaints', async (req, res) => {
       preferredLanguage = null,
       pincode = null,
       isProtectedCase = false,
+      paymentReference = '',
+      paymentUtr = '',
     } = req.body;
 
     if (!name || !email || !phone || !location || !caseType || !description || !pincode) {
@@ -627,6 +686,13 @@ router.post('/public/complaints', async (req, res) => {
     }
     if (!/^\d{6}$/.test(String(pincode))) {
       return res.status(400).json({ error: 'Pincode must be 6 digits' });
+    }
+    if (!String(paymentReference || '').trim()) {
+      return res.status(400).json({ error: 'Complaint filing fee payment reference is required' });
+    }
+    const feePaid = await isComplaintFeePaid(String(paymentReference), 100);
+    if (!feePaid) {
+      return res.status(402).json({ error: 'Complaint filing fee (Rs 100 minimum) is pending or invalid' });
     }
 
     const caseNumber = buildCaseNumber();
@@ -670,8 +736,14 @@ router.post('/public/complaints', async (req, res) => {
       urgencyLevel,
       preferredLanguage,
       pincode,
-        isProtectedCase,
-        protectedReferenceId,
+      isProtectedCase,
+      protectedReferenceId,
+      payment: {
+        reference: String(paymentReference).trim(),
+        utr: String(paymentUtr || '').trim() || null,
+        amount: 100,
+        status: 'paid',
+      },
       nearestPoliceStation,
       submittedAt: new Date().toISOString(),
     };
@@ -710,7 +782,7 @@ router.post('/public/complaints', async (req, res) => {
         is_protected_case: Boolean(isProtectedCase),
         protected_reference_id: protectedReferenceId,
         progress_percent: 10,
-        progress_notes: `Complaint submitted successfully. Waiting for police review at ${nearestPoliceStation}.`,
+        progress_notes: `Complaint submitted successfully after fee payment verification. Waiting for police review at ${nearestPoliceStation}.`,
       })
       .select()
       .single();
@@ -732,6 +804,7 @@ router.post('/public/complaints', async (req, res) => {
         legalDraft,
         fullFormSaved: true,
         protectedId: protectedReferenceId,
+        paymentReference: String(paymentReference).trim(),
         nearestPoliceStation,
         status: data.status,
       },

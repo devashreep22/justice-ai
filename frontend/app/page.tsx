@@ -8,9 +8,17 @@ import {
   Upload, Trash2, Brain, Copy, Languages
 } from 'lucide-react'
 import Link from 'next/link'
+import SOSAlertPanel from '@/components/SOSAlertPanel'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const COMPLAINT_MIN_FEE = 100
 const CHATBOT_API_BASE_URL = process.env.NEXT_PUBLIC_CHATBOT_API_URL || `${API_BASE_URL}/v1/chatbot`
+
+type ChartSummary = {
+  solved: number
+  unsolved: number
+  registered: number
+}
 
 // Animated Pie Chart Component
 interface PieChartProps {
@@ -43,9 +51,9 @@ const AnimatedPieChart = ({ solved, unsolved, registered, label, uiLabels }: Pie
   }, [solved, unsolved, registered])
 
   const total = solved + unsolved + registered
-  const solvedPercent = (solved / total) * 100
-  const unsolvedPercent = (unsolved / total) * 100
-  const registeredPercent = (registered / total) * 100
+  const solvedPercent = total > 0 ? (solved / total) * 100 : 0
+  const unsolvedPercent = total > 0 ? (unsolved / total) * 100 : 0
+  const registeredPercent = total > 0 ? (registered / total) * 100 : 0
 
   const getCirclePath = (percentage: number, offset: number) => {
     const radius = 45
@@ -171,7 +179,17 @@ export default function Home() {
     | 'punjabi'
     | 'urdu'
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [expandedLegalIndex, setExpandedLegalIndex] = useState<number | null>(null)
   const [uiLanguage, setUiLanguage] = useState<UILanguage>('english')
+  const [caseSummaryStats, setCaseSummaryStats] = useState<{
+    harassment: ChartSummary
+    cyber: ChartSummary
+    overall: ChartSummary
+  }>({
+    harassment: { solved: 0, unsolved: 0, registered: 0 },
+    cyber: { solved: 0, unsolved: 0, registered: 0 },
+    overall: { solved: 0, unsolved: 0, registered: 0 },
+  })
   const [isFileComplaintOpen, setIsFileComplaintOpen] = useState(false)
   const [isAIAnalysisOpen, setIsAIAnalysisOpen] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -220,6 +238,29 @@ export default function Home() {
   const [isSecureMessageLoading, setIsSecureMessageLoading] = useState(false)
   const [isSecureSendLoading, setIsSecureSendLoading] = useState(false)
   const [secureChatSetupMessage, setSecureChatSetupMessage] = useState('')
+  const [complaintPaymentIntent, setComplaintPaymentIntent] = useState<{
+    reference: string
+    amount: number
+    upiId: string
+    upiLink: string
+    qrCodeUrl: string
+  } | null>(null)
+  const [complaintPaymentUtr, setComplaintPaymentUtr] = useState('')
+  const [isCreatingFeeIntent, setIsCreatingFeeIntent] = useState(false)
+  const [isConfirmingFeePayment, setIsConfirmingFeePayment] = useState(false)
+  const [isComplaintFeePaid, setIsComplaintFeePaid] = useState(false)
+  const [adCampaigns, setAdCampaigns] = useState<
+    Array<{ id: string; sponsor: string; title: string; description: string; ctaLabel: string; ctaUrl: string; imageUrl?: string }>
+  >([])
+  const [advertiseForm, setAdvertiseForm] = useState({
+    name: '',
+    email: '',
+    organization: '',
+    budget: '',
+    message: '',
+  })
+  const [isAdSubmitting, setIsAdSubmitting] = useState(false)
+  const [adSubmitMessage, setAdSubmitMessage] = useState('')
   const secureChatBoxRef = useRef<HTMLDivElement | null>(null)
   const secureMessageInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -358,7 +399,7 @@ export default function Home() {
       govtSub: 'Emergency support and assistance services available 24/7',
       emergencyGuidelines: 'Emergency Guidelines',
       footerTagline: 'Empowering justice through AI and technology.',
-      rights: '© 2024 JusticeAI. All rights reserved.',
+      rights: '© 2026 JusticeAI. All rights reserved.',
       language: 'Language',
     },
     hindi: {
@@ -515,7 +556,7 @@ export default function Home() {
     govtSub: 'Emergency support and assistance services available 24/7',
     emergencyGuidelines: 'Emergency Guidelines',
     footerTagline: 'Empowering justice through AI and technology.',
-    rights: '© 2024 JusticeAI. All rights reserved.',
+    rights: '© 2026 JusticeAI. All rights reserved.',
     language: 'Language',
   }
 
@@ -581,27 +622,57 @@ export default function Home() {
   const legalAwareness = [
     {
       title: 'Know Your Rights',
-      description: 'Understand the fundamental rights granted to every citizen under the constitution.'
+      description: 'Understand the fundamental rights granted to every citizen under the constitution.',
+      details: [
+        'Right to equality and equal protection under law.',
+        'Right to legal remedy when rights are violated.',
+        'Right to privacy, dignity, and fair treatment.',
+      ],
     },
     {
       title: 'Legal Procedures',
-      description: 'Learn about the step-by-step legal procedures for filing cases and lawsuits.'
+      description: 'Learn about the step-by-step legal procedures for filing cases and lawsuits.',
+      details: [
+        'Document incident details, date, time, and witnesses.',
+        'File FIR/complaint at the correct authority or portal.',
+        'Track your case number and keep copies of submissions.',
+      ],
     },
     {
       title: 'Court System',
-      description: 'Understand how the judicial system works and different types of courts.'
+      description: 'Understand how the judicial system works and different types of courts.',
+      details: [
+        'District courts handle most trial matters first.',
+        'High Courts hear appeals and constitutional issues.',
+        'Supreme Court is the final appellate authority.',
+      ],
     },
     {
       title: 'Evidence Collection',
-      description: 'Guidelines on properly collecting and preserving evidence for legal cases.'
+      description: 'Guidelines on properly collecting and preserving evidence for legal cases.',
+      details: [
+        'Keep original files with timestamps and metadata intact.',
+        'Take clear photos/videos and save backup copies.',
+        'Avoid editing evidence; note chain of custody.',
+      ],
     },
     {
       title: 'Legal Terminology',
-      description: 'Common legal terms and their meanings explained in simple language.'
+      description: 'Common legal terms and their meanings explained in simple language.',
+      details: [
+        'FIR: First Information Report registered by police.',
+        'Bail: Temporary release under legal conditions.',
+        'Affidavit: Signed statement made under oath.',
+      ],
     },
     {
       title: 'Your Responsibilities',
-      description: 'Know your duties and responsibilities as a responsible citizen.'
+      description: 'Know your duties and responsibilities as a responsible citizen.',
+      details: [
+        'Report crimes promptly with accurate information.',
+        'Cooperate with investigation and court summons.',
+        'Avoid sharing false or unverified legal claims.',
+      ],
     },
   ]
 
@@ -681,6 +752,32 @@ export default function Home() {
     'sexual': 'Sexual Harassment',
     'child': 'Child Abuse',
     'environmental': 'Environmental Violation'
+  }
+
+  const threatKeywords = [
+    'threat',
+    'threatening',
+    'danger',
+    'unsafe',
+    'help me',
+    'kidnap',
+    'stalk',
+    'attack',
+    'abuse',
+    'violence',
+    'blackmail',
+    'someone is following me',
+  ]
+
+  const isThreatDetected = threatKeywords.some((keyword) =>
+    aiAnalysisInput.toLowerCase().includes(keyword)
+  )
+
+  const jumpToSOSPanel = () => {
+    setIsAIAnalysisOpen(false)
+    setTimeout(() => {
+      document.getElementById('sos-alert-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
   }
 
   const handleAIAnalysis = async () => {
@@ -916,6 +1013,133 @@ export default function Home() {
     }
   }
 
+  const createComplaintFeeIntent = async () => {
+    if (!formData.name || !formData.email || !formData.phone) {
+      alert('Please enter name, email, and phone before payment')
+      return
+    }
+    setIsCreatingFeeIntent(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/monetization/public/complaint-fee-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          amount: COMPLAINT_MIN_FEE,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to create payment intent')
+
+      setComplaintPaymentIntent({
+        reference: data.reference,
+        amount: data.amount,
+        upiId: data.upiId,
+        upiLink: data.upiLink,
+        qrCodeUrl: data.qrCodeUrl,
+      })
+      setIsComplaintFeePaid(false)
+      setComplaintPaymentUtr('')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unable to create payment intent')
+    } finally {
+      setIsCreatingFeeIntent(false)
+    }
+  }
+
+  const confirmComplaintFeePayment = async () => {
+    if (!complaintPaymentIntent?.reference) {
+      alert('Create payment intent first')
+      return
+    }
+    if (!complaintPaymentUtr.trim()) {
+      alert('Enter UTR/transaction ID after payment')
+      return
+    }
+
+    setIsConfirmingFeePayment(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/monetization/public/complaint-fee-confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reference: complaintPaymentIntent.reference,
+          utr: complaintPaymentUtr.trim(),
+          paidAmount: complaintPaymentIntent.amount,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Payment confirmation failed')
+      setIsComplaintFeePaid(true)
+      alert(`Payment verified for reference ${data.reference}`)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Payment confirmation failed')
+    } finally {
+      setIsConfirmingFeePayment(false)
+    }
+  }
+
+  const fetchAdCampaigns = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/monetization/public/ad-campaigns`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load advertisements')
+      setAdCampaigns(data.campaigns || [])
+    } catch (err) {
+      console.error(err)
+      setAdCampaigns([])
+    }
+  }
+
+  const handleAdvertiseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsAdSubmitting(true)
+    setAdSubmitMessage('')
+    try {
+      const response = await fetch(`${API_BASE_URL}/monetization/public/advertise-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(advertiseForm),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to submit advertisement inquiry')
+      setAdSubmitMessage(data.message || 'Advertisement inquiry submitted')
+      setAdvertiseForm({
+        name: '',
+        email: '',
+        organization: '',
+        budget: '',
+        message: '',
+      })
+    } catch (err) {
+      setAdSubmitMessage(err instanceof Error ? err.message : 'Unable to submit advertisement inquiry')
+    } finally {
+      setIsAdSubmitting(false)
+    }
+  }
+
+  const fetchCaseSummaryStats = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/public/stats/summary`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load case stats')
+      setCaseSummaryStats({
+        harassment: data.summary?.harassment || { solved: 0, unsolved: 0, registered: 0 },
+        cyber: data.summary?.cyber || { solved: 0, unsolved: 0, registered: 0 },
+        overall: data.summary?.overall || { solved: 0, unsolved: 0, registered: 0 },
+      })
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  useEffect(() => {
+    fetchAdCampaigns()
+    fetchCaseSummaryStats()
+  }, [])
+
   const handleSubmitComplaint = async (e: React.FormEvent) => {
     e.preventDefault()
     if (uploadedImages.length === 0) {
@@ -930,6 +1154,10 @@ export default function Home() {
 
     if (!selectedCategory) {
       alert(t.selectCategory)
+      return
+    }
+    if (!complaintPaymentIntent?.reference || !isComplaintFeePaid) {
+      alert('Please complete the minimum Rs 100 complaint fee payment before filing')
       return
     }
 
@@ -957,6 +1185,8 @@ export default function Home() {
           preferredLanguage: formData.preferredLanguage,
           pincode: formData.pincode,
           isProtectedCase: formData.isProtectedCase,
+          paymentReference: complaintPaymentIntent.reference,
+          paymentUtr: complaintPaymentUtr.trim(),
         }),
       })
 
@@ -995,6 +1225,10 @@ export default function Home() {
       setProofAnalysisSeverity('')
       setSelectedCategory(null)
       setNearestPoliceStation('')
+      setComplaintPaymentIntent(null)
+      setComplaintPaymentUtr('')
+      setIsComplaintFeePaid(false)
+      fetchCaseSummaryStats()
       setIsFileComplaintOpen(false)
       alert(t.complaintFiledTracking(data.complaint?.trackingId || 'N/A'))
     } catch (err) {
@@ -1320,9 +1554,27 @@ export default function Home() {
 
           {/* Animated Charts */}
           <div className="grid md:grid-cols-3 gap-8 mt-12">
-            <AnimatedPieChart solved={1245} unsolved={312} registered={980} label={s.harassmentCases} uiLabels={{ cases: s.cases, solved: s.solved, unsolved: s.unsolved, registered: s.registered }} />
-            <AnimatedPieChart solved={856} unsolved={234} registered={645} label={s.cyberCases} uiLabels={{ cases: s.cases, solved: s.solved, unsolved: s.unsolved, registered: s.registered }} />
-            <AnimatedPieChart solved={923} unsolved={187} registered={512} label={s.overallStats} uiLabels={{ cases: s.cases, solved: s.solved, unsolved: s.unsolved, registered: s.registered }} />
+            <AnimatedPieChart
+              solved={caseSummaryStats.harassment.solved}
+              unsolved={caseSummaryStats.harassment.unsolved}
+              registered={caseSummaryStats.harassment.registered}
+              label={s.harassmentCases}
+              uiLabels={{ cases: s.cases, solved: s.solved, unsolved: s.unsolved, registered: s.registered }}
+            />
+            <AnimatedPieChart
+              solved={caseSummaryStats.cyber.solved}
+              unsolved={caseSummaryStats.cyber.unsolved}
+              registered={caseSummaryStats.cyber.registered}
+              label={s.cyberCases}
+              uiLabels={{ cases: s.cases, solved: s.solved, unsolved: s.unsolved, registered: s.registered }}
+            />
+            <AnimatedPieChart
+              solved={caseSummaryStats.overall.solved}
+              unsolved={caseSummaryStats.overall.unsolved}
+              registered={caseSummaryStats.overall.registered}
+              label={s.overallStats}
+              uiLabels={{ cases: s.cases, solved: s.solved, unsolved: s.unsolved, registered: s.registered }}
+            />
           </div>
 
           <div id="track-case-section" className="mt-12 bg-white text-gray-900 rounded-lg p-6 max-w-3xl mx-auto">
@@ -1566,6 +1818,9 @@ export default function Home() {
                   setIsFileComplaintOpen(false)
                   setSelectedCategory(null)
                   setUploadedImages([])
+                  setComplaintPaymentIntent(null)
+                  setComplaintPaymentUtr('')
+                  setIsComplaintFeePaid(false)
                 }}
                 className="p-2 hover:bg-blue-500 rounded-lg transition"
               >
@@ -1602,6 +1857,9 @@ export default function Home() {
                       setRejectedProofCount(0)
                       setProofAnalysisMessage('')
                       setProofAnalysisSeverity('')
+                      setComplaintPaymentIntent(null)
+                      setComplaintPaymentUtr('')
+                      setIsComplaintFeePaid(false)
                     }}
                     className="text-blue-600 hover:text-blue-700 font-medium mb-8 flex items-center gap-2"
                   >
@@ -1871,6 +2129,65 @@ export default function Home() {
                       </div>
                     )}
 
+                    <div className="rounded-lg border border-green-200 bg-green-50 p-5">
+                      <h3 className="text-lg font-bold text-green-900">Mandatory Complaint Fee</h3>
+                      <p className="text-sm text-green-800 mt-1">
+                        A minimum filing fee of Rs {COMPLAINT_MIN_FEE} is required before complaint submission.
+                      </p>
+                      {!complaintPaymentIntent ? (
+                        <button
+                          type="button"
+                          onClick={createComplaintFeeIntent}
+                          disabled={isCreatingFeeIntent}
+                          className="mt-4 bg-green-700 hover:bg-green-800 disabled:bg-green-400 text-white px-4 py-2 rounded-lg font-semibold"
+                        >
+                          {isCreatingFeeIntent ? 'Creating Payment...' : `Generate UPI Payment (Rs ${COMPLAINT_MIN_FEE})`}
+                        </button>
+                      ) : (
+                        <div className="mt-4 space-y-3">
+                          <p className="text-sm text-gray-800">
+                            <span className="font-semibold">Reference:</span> {complaintPaymentIntent.reference}
+                          </p>
+                          <p className="text-sm text-gray-800">
+                            <span className="font-semibold">UPI ID:</span> {complaintPaymentIntent.upiId}
+                          </p>
+                          <div className="flex flex-wrap items-start gap-4">
+                            <img
+                              src={complaintPaymentIntent.qrCodeUrl}
+                              alt="UPI QR"
+                              className="w-36 h-36 border border-gray-300 rounded-lg bg-white"
+                            />
+                            <div className="space-y-2">
+                              <a
+                                href={complaintPaymentIntent.upiLink}
+                                className="inline-block bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold"
+                              >
+                                Open UPI App
+                              </a>
+                              <input
+                                type="text"
+                                value={complaintPaymentUtr}
+                                onChange={(e) => setComplaintPaymentUtr(e.target.value)}
+                                placeholder="Enter UTR / Transaction ID"
+                                className="block w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              />
+                              <button
+                                type="button"
+                                onClick={confirmComplaintFeePayment}
+                                disabled={isConfirmingFeePayment}
+                                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg font-semibold"
+                              >
+                                {isConfirmingFeePayment ? 'Verifying...' : 'I Have Paid - Verify'}
+                              </button>
+                              {isComplaintFeePaid && (
+                                <p className="text-sm font-semibold text-green-700">Payment verified. You can file complaint now.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="flex gap-3 pt-6 sticky bottom-0 bg-white">
                       <button
                         type="button"
@@ -1903,6 +2220,9 @@ export default function Home() {
                           setRejectedProofCount(0)
                           setProofAnalysisMessage('')
                           setProofAnalysisSeverity('')
+                          setComplaintPaymentIntent(null)
+                          setComplaintPaymentUtr('')
+                          setIsComplaintFeePaid(false)
                         }}
                         className="flex-1 bg-gray-200 text-gray-900 px-6 py-4 rounded-lg font-bold hover:bg-gray-300 transition"
                       >
@@ -1987,6 +2307,20 @@ export default function Home() {
                       ? 'Example: I was scammed online through a fake e-commerce website...'
                       : 'Type your question for Justice AI chatbot...'}
                   />
+                  {isThreatDetected && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                      <p className="font-semibold text-red-700">
+                        This message may indicate immediate danger. Activate SOS alert now.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={jumpToSOSPanel}
+                        className="mt-3 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                      >
+                        Activate SOS
+                      </button>
+                    </div>
+                  )}
                   <div className="flex gap-3">
                     <button
                       onClick={handleAIAnalysis}
@@ -2095,10 +2429,24 @@ export default function Home() {
                   <h3 className="text-lg font-bold text-gray-900">{item.title}</h3>
                 </div>
                 <p className="text-gray-600 mb-4">{item.description}</p>
-                <button className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 transition">
-                  Learn More
-                  <ArrowRight className="w-4 h-4" />
+                <button
+                  type="button"
+                  onClick={() => setExpandedLegalIndex(expandedLegalIndex === idx ? null : idx)}
+                  className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 transition"
+                >
+                  {expandedLegalIndex === idx ? 'Show Less' : 'Learn More'}
+                  <ArrowRight className={`w-4 h-4 transition ${expandedLegalIndex === idx ? 'rotate-90' : ''}`} />
                 </button>
+                {expandedLegalIndex === idx && (
+                  <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                    <h4 className="font-semibold text-blue-900 mb-2">Detailed Instructions</h4>
+                    <ul className="space-y-1 text-sm text-blue-900">
+                      {item.details.map((detail: string, detailIdx: number) => (
+                        <li key={detailIdx}>- {detail}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2157,6 +2505,8 @@ export default function Home() {
             })}
           </div>
 
+          <SOSAlertPanel />
+
           <div className="mt-16 bg-white rounded-lg border border-gray-200 p-8">
             <h3 className="text-2xl font-bold text-gray-900 mb-4">{s.emergencyGuidelines}</h3>
             <div className="grid md:grid-cols-2 gap-6">
@@ -2179,6 +2529,94 @@ export default function Home() {
                 </ul>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-20 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Advertisement Sponsors</h2>
+            <p className="text-xl text-gray-600">Partner with JusticeAI through sponsored campaigns.</p>
+          </div>
+
+          <div className="mb-10">
+            <form onSubmit={handleAdvertiseSubmit} className="bg-gray-50 border border-gray-200 rounded-xl p-6 space-y-3">
+              <h3 className="text-2xl font-bold text-gray-900">Advertise With JusticeAI</h3>
+              <p className="text-sm text-gray-600">Submit your inquiry for homepage campaign placement.</p>
+              <input
+                type="text"
+                value={advertiseForm.name}
+                onChange={(e) => setAdvertiseForm({ ...advertiseForm, name: e.target.value })}
+                placeholder="Your Name"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                required
+              />
+              <input
+                type="email"
+                value={advertiseForm.email}
+                onChange={(e) => setAdvertiseForm({ ...advertiseForm, email: e.target.value })}
+                placeholder="Email"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                required
+              />
+              <input
+                type="text"
+                value={advertiseForm.organization}
+                onChange={(e) => setAdvertiseForm({ ...advertiseForm, organization: e.target.value })}
+                placeholder="Organization"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                required
+              />
+              <input
+                type="text"
+                value={advertiseForm.budget}
+                onChange={(e) => setAdvertiseForm({ ...advertiseForm, budget: e.target.value })}
+                placeholder="Budget (optional)"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+              <textarea
+                value={advertiseForm.message}
+                onChange={(e) => setAdvertiseForm({ ...advertiseForm, message: e.target.value })}
+                rows={3}
+                placeholder="Campaign goal / target audience"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                required
+              />
+              <button
+                type="submit"
+                disabled={isAdSubmitting}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg font-semibold"
+              >
+                {isAdSubmitting ? 'Submitting...' : 'Submit Advertisement Inquiry'}
+              </button>
+              {adSubmitMessage && <p className="text-sm text-gray-700">{adSubmitMessage}</p>}
+            </form>
+          </div>
+
+          <div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-4">Featured Sponsored Partners</h3>
+            {adCampaigns.length === 0 ? (
+              <p className="text-gray-600">No active sponsored campaigns right now.</p>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {adCampaigns.map((campaign) => (
+                  <div key={campaign.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                    <p className="text-xs font-semibold text-blue-700 mb-2">Sponsored by {campaign.sponsor}</p>
+                    <h4 className="text-lg font-bold text-gray-900">{campaign.title}</h4>
+                    <p className="text-sm text-gray-600 mt-2 mb-4">{campaign.description}</p>
+                    <a
+                      href={campaign.ctaUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
+                    >
+                      {campaign.ctaLabel || 'Learn More'}
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>
