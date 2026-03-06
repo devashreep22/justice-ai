@@ -1001,13 +1001,19 @@ export default function Home() {
       return
     }
 
+    const normalizedTrackingId = trackingIdInput.trim().toUpperCase()
     setIsTrackingLoading(true)
     setTrackingResult(null)
     try {
-      const response = await fetch(`${API_BASE_URL}/cases/public/track/${trackingIdInput.trim()}`)
-      const data = await response.json()
+      let response = await fetch(`${API_BASE_URL}/cases/public/track/${normalizedTrackingId}`)
+      let data = await response.json()
+
       if (!response.ok) {
-        throw new Error(data.error || 'Tracking ID not found')
+        response = await fetch(`${API_BASE_URL}/lawyer-help/public/track/${normalizedTrackingId}`)
+        data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Tracking ID not found')
+        }
       }
       setTrackingResult(data)
     } catch (err) {
@@ -1039,6 +1045,9 @@ export default function Home() {
                 className="text-gray-700 hover:text-blue-600 transition font-medium"
               >
                 {s.aiAnalysis}
+              </Link>
+              <Link href="/lawyer-help" className="text-gray-700 hover:text-blue-600 transition font-medium">
+                Lawyer Help
               </Link>
               <button
                 onClick={() => {
@@ -1100,6 +1109,13 @@ export default function Home() {
                 className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition"
               >
                 {s.aiAnalysis}
+              </Link>
+              <Link
+                href="/lawyer-help"
+                onClick={() => setIsMenuOpen(false)}
+                className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition"
+              >
+                Lawyer Help
               </Link>
               <button
                 onClick={() => {
@@ -1255,7 +1271,7 @@ export default function Home() {
               </div>
             )}
 
-            {trackingResult?.tracking && (
+            {trackingResult?.tracking?.caseNumber && (
               <div className="mt-4 p-4 rounded-lg bg-blue-50 border border-blue-200 space-y-2">
                 <p><span className="font-semibold">Case:</span> {trackingResult.tracking.caseNumber}</p>
                 <p><span className="font-semibold">Status:</span> {trackingResult.tracking.status}</p>
@@ -1290,6 +1306,24 @@ export default function Home() {
                       Download Legal Draft PDF
                     </button>
                   </div>
+                )}
+              </div>
+            )}
+
+            {trackingResult?.tracking?.requestTrackingId && !trackingResult?.tracking?.caseNumber && (
+              <div className="mt-4 p-4 rounded-lg bg-indigo-50 border border-indigo-200 space-y-2">
+                <p><span className="font-semibold">Lawyer Request Tracking ID:</span> {trackingResult.tracking.requestTrackingId}</p>
+                <p><span className="font-semibold">Status:</span> {trackingResult.tracking.status}</p>
+                <p><span className="font-semibold">Progress:</span> {trackingResult.tracking.progressPercent}%</p>
+                <p><span className="font-semibold">Latest Note:</span> {trackingResult.tracking.progressNotes || 'No updates yet'}</p>
+                {trackingResult.tracking.lawyerResponseNote && (
+                  <p><span className="font-semibold">Lawyer Note:</span> {trackingResult.tracking.lawyerResponseNote}</p>
+                )}
+                {trackingResult.tracking.lawyer?.full_name && (
+                  <p><span className="font-semibold">Lawyer:</span> {trackingResult.tracking.lawyer.full_name}</p>
+                )}
+                {trackingResult.tracking.linkedCaseTrackingId && (
+                  <p><span className="font-semibold">Linked Case Tracking:</span> {trackingResult.tracking.linkedCaseTrackingId}</p>
                 )}
               </div>
             )}
