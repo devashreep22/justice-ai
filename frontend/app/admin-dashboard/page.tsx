@@ -7,6 +7,8 @@ import {
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+
 interface PendingApproval {
   id: string
   name: string
@@ -28,6 +30,24 @@ interface PendingApproval {
   }
 }
 
+interface ApiUser {
+  id: string
+  full_name: string | null
+  email: string
+  phone: string | null
+  user_type: 'admin' | 'police' | 'lawyer'
+  approval_status: 'pending' | 'approved' | 'rejected' | null
+  created_at: string
+  aadhar_id: string | null
+  department: string | null
+  city: string | null
+  badge_number: string | null
+  license_number: string | null
+  specialization: string | null
+  experience_years: number | null
+  hourly_rate: number | null
+}
+
 export default function AdminDashboard() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
@@ -35,107 +55,112 @@ export default function AdminDashboard() {
   const [selectedApproval, setSelectedApproval] = useState<PendingApproval | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'police' | 'lawyer'>('all')
+  const [approvals, setApprovals] = useState<PendingApproval[]>([])
+  const [isLoadingData, setIsLoadingData] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     setMounted(true)
-  }, [])
+    const token = localStorage.getItem('token')
+    const rawUser = localStorage.getItem('user')
 
-  // Mock data - pending approvals
-  const [approvals, setApprovals] = useState<PendingApproval[]>([
-    {
-      id: 'P001',
-      name: 'Rajesh Kumar',
-      email: 'rajesh.kumar@police.gov.in',
-      phone: '9876543210',
-      type: 'police',
-      status: 'pending',
-      submittedDate: '2024-02-28',
-      aadharId: '123456789012',
-      location: 'Mumbai Police Station',
-      city: 'Mumbai',
-      additionalInfo: {
-        badgeNumber: 'MH-2024-001',
-        station: 'Bandra Police Station'
-      }
-    },
-    {
-      id: 'L001',
-      name: 'Priya Sharma',
-      email: 'priya.sharma@lawyer.com',
-      phone: '9876543211',
-      type: 'lawyer',
-      status: 'pending',
-      submittedDate: '2024-02-27',
-      aadharId: '234567890123',
-      location: 'Delhi',
-      city: 'Delhi',
-      additionalInfo: {
-        licenseNumber: 'DLSC-2024-001',
-        specialization: 'Criminal Law',
-        experience: 5,
-        hourlyRate: 1500
-      }
-    },
-    {
-      id: 'P002',
-      name: 'Amit Singh',
-      email: 'amit.singh@police.gov.in',
-      phone: '9876543212',
-      type: 'police',
-      status: 'pending',
-      submittedDate: '2024-02-26',
-      aadharId: '345678901234',
-      location: 'Bangalore Police Station',
-      city: 'Bangalore',
-      additionalInfo: {
-        badgeNumber: 'KA-2024-002',
-        station: 'Koramangala Police Station'
-      }
-    },
-    {
-      id: 'L002',
-      name: 'Vikram Patel',
-      email: 'vikram.patel@advocate.com',
-      phone: '9876543213',
-      type: 'lawyer',
-      status: 'approved',
-      submittedDate: '2024-02-20',
-      aadharId: '456789012345',
-      location: 'Gujarat',
-      city: 'Ahmedabad',
-      additionalInfo: {
-        licenseNumber: 'GUJSC-2024-002',
-        specialization: 'Corporate Law',
-        experience: 8,
-        hourlyRate: 2000
-      }
-    },
-    {
-      id: 'P003',
-      name: 'Suresh Reddy',
-      email: 'suresh.reddy@police.gov.in',
-      phone: '9876543214',
-      type: 'police',
-      status: 'rejected',
-      submittedDate: '2024-02-18',
-      aadharId: '567890123456',
-      location: 'Hyderabad Police Station',
-      city: 'Hyderabad'
+    if (!token || !rawUser) {
+      router.replace('/admin-login')
+      return
     }
-  ])
 
-  const handleApprove = (id: string) => {
-    setApprovals(approvals.map((app: PendingApproval) =>
-      app.id === id ? { ...app, status: 'approved' } : app
-    ))
-    setSelectedApproval(null)
+    try {
+      const user = JSON.parse(rawUser)
+      if (user?.userType !== 'admin') {
+        router.replace('/admin-login')
+        return
+      }
+    } catch {
+      router.replace('/admin-login')
+      return
+    }
+
+    const fetchApprovals = async () => {
+      setIsLoadingData(true)
+      setError('')
+      try {
+        const response = await fetch(`${API_BASE_URL}/users`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load approvals')
+        }
+
+        const mapped: PendingApproval[] = (data.users || [])
+          .filter((u: ApiUser) => u.user_type === 'police' || u.user_type === 'lawyer')
+          .map((u: ApiUser) => ({
+            id: u.id,
+            name: u.full_name || 'N/A',
+            email: u.email,
+            phone: u.phone || 'N/A',
+            type: u.user_type,
+            status: (u.approval_status || 'pending') as 'pending' | 'approved' | 'rejected',
+            submittedDate: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : 'N/A',
+            aadharId: u.aadhar_id || '',
+            location: u.department || u.city || 'N/A',
+            city: u.city || 'N/A',
+            additionalInfo: u.user_type === 'police'
+              ? { badgeNumber: u.badge_number || 'N/A', station: u.department || 'N/A' }
+              : {
+                  licenseNumber: u.license_number || 'N/A',
+                  specialization: u.specialization || 'N/A',
+                  experience: u.experience_years || 0,
+                  hourlyRate: u.hourly_rate || 0,
+                },
+          }))
+
+        setApprovals(mapped)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load data')
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    fetchApprovals()
+  }, [router])
+
+  const updateApprovalStatus = async (id: string, status: 'approved' | 'rejected') => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    const response = await fetch(`${API_BASE_URL}/users/${id}/approval-status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ approvalStatus: status }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to update status')
+    }
   }
 
-  const handleReject = (id: string) => {
-    setApprovals(approvals.map((app: PendingApproval) =>
-      app.id === id ? { ...app, status: 'rejected' } : app
-    ))
-    setSelectedApproval(null)
+  const handleApprove = async (id: string) => {
+    try {
+      await updateApprovalStatus(id, 'approved')
+      setApprovals((prev) => prev.map((app) => (app.id === id ? { ...app, status: 'approved' } : app)))
+      setSelectedApproval(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Approval failed')
+    }
+  }
+
+  const handleReject = async (id: string) => {
+    try {
+      await updateApprovalStatus(id, 'rejected')
+      setApprovals((prev) => prev.map((app) => (app.id === id ? { ...app, status: 'rejected' } : app)))
+      setSelectedApproval(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Rejection failed')
+    }
   }
 
   const filteredApprovals = approvals.filter((app: PendingApproval) => {
@@ -186,7 +211,11 @@ export default function AdminDashboard() {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full"></span>
               </button>
               <button
-                onClick={() => router.push('/login')}
+                onClick={() => {
+                  localStorage.removeItem('token')
+                  localStorage.removeItem('user')
+                  router.push('/admin-login')
+                }}
                 className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
               >
                 <LogOut className="w-5 h-5" />
@@ -297,6 +326,13 @@ export default function AdminDashboard() {
 
         {/* Approvals Table */}
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          {error && (
+            <div className="p-4 text-sm text-red-700 bg-red-50 border-b border-red-200">{error}</div>
+          )}
+          {isLoadingData ? (
+            <div className="p-12 text-center text-gray-600">Loading applications...</div>
+          ) : (
+          <>
           {filteredApprovals.length === 0 ? (
             <div className="p-12 text-center">
               <User className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -359,6 +395,8 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+          )}
+          </>
           )}
         </div>
       </main>

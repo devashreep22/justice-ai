@@ -24,3 +24,12 @@ export const requireAdmin = (req, res, next) => {
   }
   next();
 };
+
+export const requireRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user?.userType || !allowedRoles.includes(req.user.userType)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    next();
+  };
+};

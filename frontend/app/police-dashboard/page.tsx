@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Shield, LogOut, Bell, Menu, X, Eye, CheckCircle, Clock, AlertCircle, Search, Filter } from 'lucide-react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 interface Case {
   id: string
@@ -17,6 +17,8 @@ interface Case {
 }
 
 export default function PoliceDashboard() {
+  const router = useRouter()
+  const [isAuthChecked, setIsAuthChecked] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [selectedTab, setSelectedTab] = useState<'new' | 'pending' | 'assigned'>('new')
   const [searchQuery, setSearchQuery] = useState('')
@@ -119,6 +121,37 @@ export default function PoliceDashboard() {
     { label: 'Assigned Cases', value: cases.filter(c => c.status === 'assigned').length, color: 'bg-green-100', textColor: 'text-green-600' }
   ]
 
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    const rawUser = localStorage.getItem('user')
+
+    if (!token || !rawUser) {
+      router.replace('/login')
+      return
+    }
+
+    try {
+      const user = JSON.parse(rawUser)
+      if (user?.userType !== 'police') {
+        router.replace('/login')
+        return
+      }
+      setIsAuthChecked(true)
+    } catch {
+      router.replace('/login')
+    }
+  }, [router])
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    router.push('/login')
+  }
+
+  if (!isAuthChecked) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navigation */}
@@ -147,9 +180,9 @@ export default function PoliceDashboard() {
                 </div>
                 <div className="w-10 h-10 bg-blue-600 rounded-full"></div>
               </div>
-              <Link href="/login" className="p-2 text-gray-600 hover:text-red-600 transition">
+              <button onClick={handleLogout} className="p-2 text-gray-600 hover:text-red-600 transition">
                 <LogOut className="w-6 h-6" />
-              </Link>
+              </button>
             </div>
 
             {/* Mobile Menu Button */}
@@ -168,10 +201,10 @@ export default function PoliceDashboard() {
                 <Bell className="w-5 h-5" />
                 Notifications
               </button>
-              <Link href="/login" className="block w-full text-left px-4 py-2 hover:bg-gray-100 rounded transition flex items-center gap-2 text-red-600">
+              <button onClick={handleLogout} className="block w-full text-left px-4 py-2 hover:bg-gray-100 rounded transition flex items-center gap-2 text-red-600">
                 <LogOut className="w-5 h-5" />
                 Logout
-              </Link>
+              </button>
             </div>
           )}
         </div>

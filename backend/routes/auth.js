@@ -9,7 +9,7 @@ const router = express.Router();
 router.post('/signup', async (req, res) => {
   console.log('SIGNUP_ENDPOINT_CALLED_12345', req.body);
   try {
-    const { email, password, fullName, userType } = req.body;
+    const { email, password, fullName, userType, ...otherProfileData } = req.body;
 
     // Validate input
     if (!email || !password || !userType) {
@@ -36,15 +36,48 @@ router.post('/signup', async (req, res) => {
 
     console.log('Auth successful, user created:', authData.user.id);
 
+    // Prepare profile data based on user type
+    let profileData = {
+      id: authData.user.id,
+      email,
+      full_name: fullName,
+      user_type: userType,
+    };
+
+    if (userType === 'police') {
+      profileData = {
+        ...profileData,
+        phone: otherProfileData.phone || null,
+        aadhar_id: otherProfileData.aadharId || null,
+        department: otherProfileData.station || null,
+        badge_number: otherProfileData.badgeNumber || null,
+        city: otherProfileData.city || null,
+        state: otherProfileData.state || null,
+        address: otherProfileData.address || null,
+        approval_status: 'pending'
+      };
+    } else if (userType === 'lawyer') {
+      profileData = {
+        ...profileData,
+        phone: otherProfileData.phone || null,
+        aadhar_id: otherProfileData.aadharId || null,
+        license_number: otherProfileData.licenseNumber || null,
+        specialization: otherProfileData.specialization || null,
+        bar_council: otherProfileData.barCouncil || null,
+        experience_years: otherProfileData.experienceYears ? parseInt(otherProfileData.experienceYears, 10) : null,
+        city: otherProfileData.city || null,
+        state: otherProfileData.state || null,
+        address: otherProfileData.address || null,
+        hourly_rate: otherProfileData.hourlyRate ? parseFloat(otherProfileData.hourlyRate) : null,
+        bio: otherProfileData.bio || null,
+        approval_status: 'pending'
+      };
+    }
+
     // Insert user profile into users table
     const { error: userError } = await supabase
       .from('users')
-      .insert({
-        id: authData.user.id,
-        email,
-        full_name: fullName,
-        user_type: userType,
-      });
+      .insert(profileData);
 
     if (userError) {
       console.error('User profile insertion error:', userError);
@@ -106,11 +139,26 @@ router.post('/login', async (req, res) => {
 
     if (userError) {
       console.error('User fetch error:', userError);
+      return res.status(500).json({ error: 'Unable to load user profile' });
+    }
+
+    if (!userData) {
+      return res.status(404).json({ error: 'User profile not found' });
+    }
+
+    // Police/Lawyer accounts must be approved by admin before login access.
+    if (
+      ['police', 'lawyer'].includes(userData.user_type) &&
+      userData.approval_status !== 'approved'
+    ) {
+      return res.status(403).json({
+        error: `Account ${userData.approval_status || 'pending'} by admin`,
+      });
     }
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: data.user.id, email, userType: userData?.user_type },
+      { id: data.user.id, email, userType: userData.user_type },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE }
     );
@@ -120,8 +168,9 @@ router.post('/login', async (req, res) => {
       user: {
         id: data.user.id,
         email,
-        fullName: userData?.full_name,
-        userType: userData?.user_type,
+        fullName: userData.full_name,
+        userType: userData.user_type,
+        approvalStatus: userData.approval_status || null,
       },
       token,
     });

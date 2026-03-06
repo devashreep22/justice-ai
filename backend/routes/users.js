@@ -24,6 +24,34 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+// Get users by type (admin, lawyer, police)
+router.get('/type/:userType', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.userType !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { userType } = req.params;
+
+    const validUserTypes = ['admin', 'lawyer', 'police'];
+    if (!validUserTypes.includes(userType)) {
+      return res.status(400).json({ error: 'Invalid user type' });
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('user_type', userType)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ users: data });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get user by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -73,20 +101,34 @@ router.put('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Get users by type (admin, lawyer, police)
-router.get('/type/:userType', authenticateToken, async (req, res) => {
+// Update user approval status (admin only)
+router.put('/:id/approval-status', authenticateToken, async (req, res) => {
   try {
-    const { userType } = req.params;
+    if (req.user.userType !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    const { approvalStatus } = req.body;
+
+    const validStatuses = ['pending', 'approved', 'rejected'];
+    if (!validStatuses.includes(approvalStatus)) {
+      return res.status(400).json({ error: 'Invalid approval status' });
+    }
 
     const { data, error } = await supabase
       .from('users')
-      .select('*')
-      .eq('user_type', userType)
-      .order('created_at', { ascending: false });
+      .update({
+        approval_status: approvalStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
 
     if (error) throw error;
 
-    res.json({ users: data });
+    res.json({ message: 'Approval status updated', user: data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

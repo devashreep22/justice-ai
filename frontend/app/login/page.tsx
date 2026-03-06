@@ -5,6 +5,8 @@ import { Scale, Shield, Briefcase, Mail, Lock, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+
 export default function LoginPage() {
   const router = useRouter()
   const [selectedRole, setSelectedRole] = useState<'police' | 'lawyer' | null>(null)
@@ -12,18 +14,57 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    // Simulate login
-    setTimeout(() => {
+    
+    try {
+      if (!selectedRole) {
+        alert('Please select a role first');
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || 'Login failed');
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if user has the correct role for this login portal
+      if (data.user?.userType !== selectedRole) {
+        alert(`Access denied. This account is registered as a ${data.user?.userType}, not ${selectedRole}.`);
+        setIsLoading(false);
+        return;
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
       if (selectedRole === 'police') {
         router.push('/police-dashboard')
       } else if (selectedRole === 'lawyer') {
         router.push('/lawyer-dashboard')
       }
-      setIsLoading(false)
-    }, 800)
+    } catch (err) {
+      console.error(err);
+      alert('Something went wrong during login');
+    }
+    
+    setIsLoading(false);
   }
 
   return (

@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Scale, Shield, Mail, Phone, MapPin, FileText, ArrowRight, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
 export default function PoliceSignup() {
   const router = useRouter()
@@ -58,33 +59,32 @@ const handleSubmit = async (e: React.FormEvent) => {
   setIsLoading(true)
 
   try {
-    const { data, error } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-    })
+    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: formData.email,
+        password: formData.password,
+        fullName: formData.fullName,
+        userType: 'police',
+        phone: formData.phone,
+        badgeNumber: formData.badgeNumber,
+        station: formData.station,
+        city: formData.city,
+        state: formData.state,
+        address: formData.address,
+        aadharId: formData.aadharId,
+      }),
+    });
 
-    if (error) {
-      alert(error.message)
-      setIsLoading(false)
-      return
-    }
+    const data = await response.json();
 
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: data.user?.id,
-        full_name: formData.fullName,
-        role: 'police',
-        phone_number: formData.phone,
-        aadhar_id: formData.aadharId,
-        department: formData.station,
-        approval_status: 'pending',
-      })
-
-    if (profileError) {
-      alert(profileError.message)
-      setIsLoading(false)
-      return
+    if (!response.ok) {
+      alert(data.error || 'Signup failed');
+      setIsLoading(false);
+      return;
     }
 
     alert('Account created! Waiting for admin approval.')

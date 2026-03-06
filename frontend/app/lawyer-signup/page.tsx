@@ -5,6 +5,8 @@ import { Scale, Briefcase, Mail, Phone, MapPin, FileText, Star, ArrowRight, Eye,
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+
 export default function LawyerSignup() {
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
@@ -59,17 +61,55 @@ export default function LawyerSignup() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!validateForm()) return
 
     setIsLoading(true)
-    setTimeout(() => {
-      console.log('Lawyer signup:', formData)
-      alert('Lawyer account created successfully!')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.fullName,
+          userType: 'lawyer',
+          phone: formData.phone,
+          licenseNumber: formData.licenseNumber,
+          specialization: formData.specialization,
+          barCouncil: formData.barCouncil,
+          experienceYears: formData.experienceYears,
+          city: formData.city,
+          state: formData.state,
+          address: formData.address,
+          aadharId: formData.aadharId,
+          hourlyRate: formData.hourlyRate,
+          bio: formData.bio,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || 'Signup failed');
+        setIsLoading(false);
+        return;
+      }
+
+      alert('Lawyer account created! Waiting for admin approval.')
       router.push('/login')
-    }, 1000)
+
+    } catch (err) {
+      console.error(err)
+      alert('Something went wrong')
+    }
+
+    setIsLoading(false)
   }
 
   return (

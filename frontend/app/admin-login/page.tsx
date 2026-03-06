@@ -5,6 +5,8 @@ import { Scale, Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+
 export default function AdminLoginPage() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
@@ -18,21 +20,43 @@ export default function AdminLoginPage() {
     setMounted(true)
   }, [])
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setIsLoading(true)
 
-    // API call would go here
-    setTimeout(() => {
-      // For now, allow any admin email ending with @justiceai.com
-      if (email.endsWith('@justiceai.com') && password.length >= 6) {
-        router.push('/admin-dashboard')
-      } else {
-        setError('Invalid email or password')
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Invalid email or password')
+        setIsLoading(false)
+        return
       }
+
+      if (data.user?.userType !== 'admin') {
+        setError('Access denied. Admin account required.')
+        setIsLoading(false)
+        return
+      }
+
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      router.push('/admin-dashboard')
+    } catch (err) {
+      console.error(err)
+      setError('Something went wrong during login')
+    } finally {
       setIsLoading(false)
-    }, 800)
+    }
   }
 
   if (!mounted) {

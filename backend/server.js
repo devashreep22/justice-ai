@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import teamRoutes from './routes/team.js';
+import caseRoutes from './routes/cases.js';
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/team', teamRoutes);
+app.use('/api/cases', caseRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
