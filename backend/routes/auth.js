@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../server.js';
+import { supabase, supabaseAuth } from '../server.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
@@ -121,7 +121,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Authenticate user
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabaseAuth.auth.signInWithPassword({
       email,
       password,
     });
@@ -131,11 +131,11 @@ router.post('/login', async (req, res) => {
     }
 
     // Fetch user profile
-    const { data: userData, error: userError } = await supabase
+    let { data: userData, error: userError } = await supabase
       .from('users')
       .select('*')
       .eq('id', data.user.id)
-      .single();
+      .maybeSingle();
 
     if (userError) {
       console.error('User fetch error:', userError);
@@ -143,7 +143,33 @@ router.post('/login', async (req, res) => {
     }
 
     if (!userData) {
-      return res.status(404).json({ error: 'User profile not found' });
+      // Backfill missing admin profile for legacy accounts.
+      const isAdminEmail = email.toLowerCase().endsWith('@justiceai.com');
+      if (!isAdminEmail) {
+        return res.status(404).json({ error: 'User profile not found' });
+      }
+
+      const inferredName =
+        data.user.user_metadata?.full_name ||
+        email.split('@')[0];
+
+      const { data: insertedProfile, error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: data.user.id,
+          email,
+          full_name: inferredName,
+          user_type: 'admin',
+        })
+        .select('*')
+        .single();
+
+      if (insertError) {
+        console.error('Profile backfill error:', insertError);
+        return res.status(500).json({ error: 'Unable to create missing user profile' });
+      }
+
+      userData = insertedProfile;
     }
 
     // Police/Lawyer accounts must be approved by admin before login access.

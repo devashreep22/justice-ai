@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+
 // Animated Pie Chart Component
 interface PieChartProps {
   solved: number
@@ -165,6 +167,12 @@ export default function Home() {
   const [aiAnalysisInput, setAiAnalysisInput] = useState('')
   const [aiAnalysisResult, setAiAnalysisResult] = useState<any>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false)
+  const [submittedTrackingId, setSubmittedTrackingId] = useState('')
+  const [submittedCaseStrength, setSubmittedCaseStrength] = useState<number | null>(null)
+  const [trackingIdInput, setTrackingIdInput] = useState('')
+  const [trackingResult, setTrackingResult] = useState<any>(null)
+  const [isTrackingLoading, setIsTrackingLoading] = useState(false)
 
   const caseCategories = [
     { id: 'harassment', label: 'Harassment', icon: AlertTriangle },
@@ -357,18 +365,76 @@ export default function Home() {
     setUploadedImages(uploadedImages.filter((_, i) => i !== index))
   }
 
-  const handleSubmitComplaint = (e: React.FormEvent) => {
+  const handleSubmitComplaint = async (e: React.FormEvent) => {
     e.preventDefault()
     if (uploadedImages.length === 0) {
       alert('Please upload at least one image as evidence')
       return
     }
-    console.log('Complaint submitted:', { category: selectedCategory, images: uploadedImages.length, ...formData })
-    alert(`Complaint filed successfully for ${selectedCategory}!`)
-    setFormData({ name: '', email: '', phone: '', description: '', evidence: '', location: '' })
-    setUploadedImages([])
-    setSelectedCategory(null)
-    setIsFileComplaintOpen(false)
+
+    if (!selectedCategory) {
+      alert('Please select a category')
+      return
+    }
+
+    setIsSubmittingComplaint(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/public/complaints`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          location: formData.location,
+          caseType: caseTypeMapping[selectedCategory] || selectedCategory,
+          description: formData.description,
+          evidence: formData.evidence,
+          proofCount: uploadedImages.length,
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to file complaint')
+      }
+
+      setSubmittedTrackingId(data.complaint?.trackingId || '')
+      setSubmittedCaseStrength(data.complaint?.caseStrength ?? null)
+      setFormData({ name: '', email: '', phone: '', description: '', evidence: '', location: '' })
+      setUploadedImages([])
+      setSelectedCategory(null)
+      setIsFileComplaintOpen(false)
+      alert(`Complaint filed. Your tracking ID is: ${data.complaint?.trackingId}`)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Complaint submission failed')
+    } finally {
+      setIsSubmittingComplaint(false)
+    }
+  }
+
+  const handleTrackCase = async () => {
+    if (!trackingIdInput.trim()) {
+      alert('Enter tracking ID')
+      return
+    }
+
+    setIsTrackingLoading(true)
+    setTrackingResult(null)
+    try {
+      const response = await fetch(`${API_BASE_URL}/cases/public/track/${trackingIdInput.trim()}`)
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Tracking ID not found')
+      }
+      setTrackingResult(data)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to track case')
+    } finally {
+      setIsTrackingLoading(false)
+    }
   }
 
   return (
@@ -391,7 +457,15 @@ export default function Home() {
               <button 
                 onClick={() => setIsAIAnalysisOpen(true)}
                 className="text-gray-700 hover:text-blue-600 transition font-medium">AI Analysis</button>
-              <Link href="/login" className="text-gray-700 hover:text-blue-600 transition font-medium">My Cases</Link>
+              <button
+                onClick={() => {
+                  const el = document.getElementById('track-case-section')
+                  el?.scrollIntoView({ behavior: 'smooth' })
+                }}
+                className="text-gray-700 hover:text-blue-600 transition font-medium"
+              >
+                Track Case
+              </button>
               <Link href="/login" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-medium">
                 Login
               </Link>
@@ -422,7 +496,16 @@ export default function Home() {
                   setIsMenuOpen(false)
                 }}
                 className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition">AI Analysis</button>
-              <Link href="/login" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition">My Cases</Link>
+              <button
+                onClick={() => {
+                  const el = document.getElementById('track-case-section')
+                  el?.scrollIntoView({ behavior: 'smooth' })
+                  setIsMenuOpen(false)
+                }}
+                className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 rounded transition"
+              >
+                Track Case
+              </button>
               <Link href="/login" className="block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition font-medium">Login</Link>
             </div>
           )}
@@ -462,6 +545,48 @@ export default function Home() {
             <AnimatedPieChart solved={1245} unsolved={312} registered={980} label="Harassment Cases" />
             <AnimatedPieChart solved={856} unsolved={234} registered={645} label="Cyber Crime Cases" />
             <AnimatedPieChart solved={923} unsolved={187} registered={512} label="Overall Statistics" />
+          </div>
+
+          <div id="track-case-section" className="mt-12 bg-white text-gray-900 rounded-lg p-6 max-w-3xl mx-auto">
+            <h3 className="text-2xl font-bold mb-3">Track Your Complaint</h3>
+            <p className="text-sm text-gray-600 mb-4">Enter your tracking ID to view FIR and case progress.</p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                value={trackingIdInput}
+                onChange={(e) => setTrackingIdInput(e.target.value)}
+                placeholder="Example: TRK-2026-ABC123"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={handleTrackCase}
+                disabled={isTrackingLoading}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold"
+              >
+                {isTrackingLoading ? 'Checking...' : 'Track'}
+              </button>
+            </div>
+
+            {submittedTrackingId && (
+              <div className="mt-4 p-4 rounded-lg bg-green-50 border border-green-200">
+                <p className="font-semibold text-green-800">Last submitted complaint</p>
+                <p className="text-sm text-green-700">Tracking ID: {submittedTrackingId}</p>
+                {submittedCaseStrength !== null && (
+                  <p className="text-sm text-green-700">Estimated case strength: {submittedCaseStrength}%</p>
+                )}
+              </div>
+            )}
+
+            {trackingResult?.tracking && (
+              <div className="mt-4 p-4 rounded-lg bg-blue-50 border border-blue-200 space-y-2">
+                <p><span className="font-semibold">Case:</span> {trackingResult.tracking.caseNumber}</p>
+                <p><span className="font-semibold">Status:</span> {trackingResult.tracking.status}</p>
+                <p><span className="font-semibold">Progress:</span> {trackingResult.tracking.progressPercent}%</p>
+                <p><span className="font-semibold">FIR:</span> {trackingResult.tracking.firNumber || 'Not filed yet'}</p>
+                <p><span className="font-semibold">Winning chance estimate:</span> {trackingResult.tracking.caseStrength}%</p>
+                <p><span className="font-semibold">Latest note:</span> {trackingResult.tracking.progressNotes || 'No notes yet'}</p>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -636,10 +761,11 @@ export default function Home() {
                     <div className="flex gap-3 pt-6 sticky bottom-0 bg-white">
                       <button
                         type="submit"
-                        className="flex-1 bg-blue-600 text-white px-6 py-4 rounded-lg font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                        disabled={isSubmittingComplaint}
+                        className="flex-1 bg-blue-600 disabled:bg-gray-400 text-white px-6 py-4 rounded-lg font-bold hover:bg-blue-700 transition flex items-center justify-center gap-2"
                       >
                         <FileText className="w-5 h-5" />
-                        File Complaint
+                        {isSubmittingComplaint ? 'Submitting...' : 'File Complaint'}
                       </button>
                       <button
                         type="button"

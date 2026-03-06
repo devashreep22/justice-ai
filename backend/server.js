@@ -24,6 +24,19 @@ export const supabase = createClient(
   }
 );
 
+// Separate anon client for end-user auth operations (login/password)
+export const supabaseAuth = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  }
+);
+
 // Middleware
 app.use(cors({
   origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
