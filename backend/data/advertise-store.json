@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "inquiryId": "ADV-1772825702610",
+    "name": "Ad User",
+    "email": "ad@example.com",
+    "organization": "Org",
+    "budget": "2000",
+    "message": "Need placement",
+    "createdAt": "2026-03-06T19:35:02.610Z"
+  }
+]

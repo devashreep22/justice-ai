@@ -451,47 +451,6 @@ router.get('/public/police-station/:pincode', async (req, res) => {
   }
 });
 
-// Public: SOS alert registration
-router.post('/public/sos', async (req, res) => {
-  try {
-    const { message, locationLink, latitude, longitude, trustedContacts = [] } = req.body;
-    if (!message || !locationLink) {
-      return res.status(400).json({ error: 'message and locationLink are required' });
-    }
-
-    const alertId = `SOS-${Date.now()}`;
-    const createdAt = new Date().toISOString();
-
-    try {
-      await supabase.from('audit_logs').insert({
-        action: 'sos_alert_created',
-        resource_type: 'sos_alert',
-        changes: {
-          alertId,
-          message,
-          locationLink,
-          latitude,
-          longitude,
-          trustedContactsCount: Array.isArray(trustedContacts) ? trustedContacts.length : 0,
-          createdAt,
-        },
-      });
-    } catch (logError) {
-      console.error('SOS alert log failed:', logError?.message || logError);
-    }
-
-    return res.status(201).json({
-      success: true,
-      alertId,
-      createdAt,
-      emergencyNumbers: ['112', '100', '1091', '1930'],
-      note: 'SOS alert recorded. Share the generated message with trusted contacts immediately.',
-    });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
-
 // Public: track complaint by tracking ID
 router.get('/public/track/:trackingId', async (req, res) => {
   try {

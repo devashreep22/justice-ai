@@ -2,19 +2,22 @@
 venv/
 __pycache__/
 *.pyc
+**/__pycache__/
 
 # Environment
 .env
+.env.local
 
 # Node
 node_modules/
-*.log
-logs/*.log
-frontend/*.log
-backend/*.log
+**/node_modules/
+.next/
+**/.next/
+*.tsbuildinfo
 
-# Python cache
-**/__pycache__/
+# Logs
+*.log
+logs/
 
 # OS
 .DS_Store
