@@ -50,3 +50,29 @@ ADD COLUMN IF NOT EXISTS protected_reference_id VARCHAR(60);
 CREATE INDEX IF NOT EXISTS idx_cases_protected_reference_id ON public.cases(protected_reference_id);
 
 CREATE INDEX IF NOT EXISTS idx_cases_tracking_id ON public.cases(tracking_id);
+
+-- Lawyer help request workflow
+CREATE TABLE IF NOT EXISTS public.lawyer_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_tracking_id VARCHAR(60) UNIQUE NOT NULL,
+  linked_case_id UUID REFERENCES public.cases(id) ON DELETE SET NULL,
+  linked_case_tracking_id VARCHAR(60),
+  lawyer_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  requester_name VARCHAR(255) NOT NULL,
+  requester_email VARCHAR(255),
+  requester_phone VARCHAR(20) NOT NULL,
+  requester_city VARCHAR(100),
+  requester_case_number VARCHAR(100),
+  requester_message TEXT NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  progress_notes TEXT,
+  lawyer_response_note TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  responded_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_lawyer_requests_lawyer_id ON public.lawyer_requests(lawyer_id);
+CREATE INDEX IF NOT EXISTS idx_lawyer_requests_status ON public.lawyer_requests(status);
+CREATE INDEX IF NOT EXISTS idx_lawyer_requests_tracking ON public.lawyer_requests(request_tracking_id);

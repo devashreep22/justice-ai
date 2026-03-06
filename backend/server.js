@@ -8,6 +8,7 @@ import userRoutes from './routes/users.js';
 import teamRoutes from './routes/team.js';
 import caseRoutes from './routes/cases.js';
 import chatbotRoutes from './routes/chatbot.js';
+import lawyerHelpRoutes from './routes/lawyer-help.js';
 
 dotenv.config();
 
@@ -58,6 +59,7 @@ app.use('/api/team', teamRoutes);
 app.use('/api/cases', caseRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/v1/chatbot', chatbotRoutes);
+app.use('/api/lawyer-help', lawyerHelpRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
