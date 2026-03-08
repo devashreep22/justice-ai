@@ -3,9 +3,9 @@
 **JusticeAI Hackathon Project**
 
 - Description: AI-powered legal assistance platform
-- Team: Farheen Shinda , Saniya Pathan , Devashree Pathak
+- Team: Devashree Pathak , Farheen Shinda , Saniya Pathan 
 - Tech stack: Python, Node.js, React, Supabase, etc.
-- Hackathon: 
+- Hackathon:Codekshetra 
 
 ## Project Structure
 
@@ -15,3 +15,4 @@
 - `docs/` - setup, testing, and launch documentation
 - `scripts/` - helper scripts to start services
 - `logs/` - local runtime logs
+
