@@ -10,7 +10,7 @@ Built during the Codekshetra Hackathon.
 
 ---
 
-## Team
+## Team Members
 
 - Devashree Pathak
 - Farheen Shinda
@@ -204,3 +204,4 @@ Backend deployed on Render.
 Deployment configuration files are available in the `deploy` directory.
 
 ---
+
